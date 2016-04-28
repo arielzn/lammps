@@ -13,6 +13,7 @@
 
 /* ----------------------------------------------------------------------
    Contributing author: Ariel Lozano (arielzn@gmail.com)
+   References: Fennell and Gezelter, JCP 124, 234104 (2006)
 ------------------------------------------------------------------------- */
 
 #include <math.h>
@@ -91,8 +92,8 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
   double *q = atom->q;
   int *type = atom->type;
   int nlocal = atom->nlocal;
-  double *special_coul = force->special_coul;
   double *special_lj = force->special_lj;
+  double *special_coul = force->special_coul;
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
@@ -113,7 +114,7 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
-  // self and shifted coulombic energy
+  // self coulombic energy
     if (eflag) {
       double e_self = -(e_shift/2.0 + alpha/MY_PIS) * qtmp*qtmp*qqrd2e;
       ev_tally(i,i,nlocal,0,0.0,e_self,0.0,0.0,0.0,0.0);
@@ -134,6 +135,14 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
 
+        if (rsq < cut_ljsq[itype][jtype]) {
+          r6inv = r2inv*r2inv*r2inv;
+          r = sqrt(rsq);
+          rexp = exp((sigma[itype][jtype]-r)*rhoinv[itype][jtype]);
+          forceborn = born1[itype][jtype]*r*rexp - born2[itype][jtype]*r6inv
+            + born3[itype][jtype]*r2inv*r6inv;
+        } else forceborn = 0.0;
+
         if (rsq < cut_coulsq) {
           r = sqrt(rsq);
           prefactor = qqrd2e*qtmp*q[j]/r;
@@ -144,14 +153,6 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
                                    r*f_shift) * r;
           if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
         } else forcecoul = 0.0;
-
-        if (rsq < cut_ljsq[itype][jtype]) {
-          r6inv = r2inv*r2inv*r2inv;
-          r = sqrt(rsq);
-          rexp = exp((sigma[itype][jtype]-r)*rhoinv[itype][jtype]);
-          forceborn = born1[itype][jtype]*r*rexp - born2[itype][jtype]*r6inv
-            + born3[itype][jtype]*r2inv*r6inv;
-        } else forceborn = 0.0;
 
         fpair = (forcecoul + factor_lj*forceborn) * r2inv;
 
@@ -165,15 +166,16 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          if (rsq < cut_coulsq) {
-            ecoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
-            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
-          } else ecoul = 0.0;
           if (rsq < cut_ljsq[itype][jtype]) {
             evdwl = a[itype][jtype]*rexp - c[itype][jtype]*r6inv +
               d[itype][jtype]*r6inv*r2inv - offset[itype][jtype];
             evdwl *= factor_lj;
           } else evdwl = 0.0;
+
+          if (rsq < cut_coulsq) {
+            ecoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
+            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
+          } else ecoul = 0.0;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
@@ -232,7 +234,8 @@ void PairBornCoulDSF::settings(int narg, char **arg)
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
       for (j = i+1; j <= atom->ntypes; j++)
-        if (setflag[i][j]) cut_lj[i][j] = cut_lj_global;
+        if (setflag[i][j])
+          cut_lj[i][j] = cut_lj_global;
   }
 }
 

@@ -6,14 +6,16 @@ SHELL = /bin/sh
 # compiler/linker settings
 # specify flags and libraries needed for your compiler
 
-CC =		mpicxx
-CCFLAGS =	-O3
+CC =		mpiicpc 
+OPTFLAGS =      -xHost -O2 -fp-model fast=2 -no-prec-div -qoverride-limits
+CCFLAGS =	-g -qopenmp -DLAMMPS_MEMALIGN=64 -no-offload \
+                -fno-alias -ansi-alias -restrict $(OPTFLAGS)
 SHFLAGS =	-fPIC
 DEPFLAGS =	-M
 
-LINK =		mpicxx
-LINKFLAGS =	-O
-LIB = 
+LINK =		mpiicpc
+LINKFLAGS =	-g -qopenmp $(OPTFLAGS)
+LIB =           
 SIZE =		size
 
 ARCHIVE =	ar
@@ -50,10 +52,10 @@ MPI_LIB =
 # PATH = path for FFT library
 # LIB = name of FFT library
 
-FFT_INC =       -DFFT_MKL -DFFT_SINGLE                                                                                                                                                                               
-FFT_PATH =                                                                                                                                                                                                           
-FFT_LIB =       -lmkl_intel_lp64 -lmkl_sequential -lmkl_core                                                                                                                                                         
-                                                               
+FFT_INC =       -DFFT_MKL
+FFT_PATH =
+FFT_LIB =       -lmkl_intel_lp64 -lmkl_sequential -lmkl_core
+
 # JPEG and/or PNG library
 # see discussion in Section 2.2 (step 7) of manual
 # only needed if -DLAMMPS_JPEG or -DLAMMPS_PNG listed with LMP_INC
