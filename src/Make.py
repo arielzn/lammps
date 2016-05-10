@@ -14,18 +14,21 @@ import sys,os,commands,re,copy,subprocess
 # make classes = makefile options with no defaults
 # setargs = makefile settings
 # actionargs = allowed actions (also lib-dir and machine)
+# lib build flags are set if lib is built, for use with zoutput
 
 abbrevs = "adhjmoprsvz"
 
 switchclasses = ("actions","dir","help","jmake","makefile",
                  "output","packages","redo","settings","verbose","zoutput")
 libclasses = ("atc","awpmd","colvars","cuda","gpu","h5md",
-              "meam","poems","python","qmmm","reax","voronoi")
+              "meam","poems","python","qmmm","voronoi")
 buildclasses = ("intel","kokkos")
 makeclasses = ("cc","flags","mpi","fft","jpg","png")
 
 setargs = ("gzip","#gzip","ffmpeg","#ffmpeg","smallbig","bigbig","smallsmall")
 actionargs = ("lib-all","file","clean","exe")
+
+gpubuildflag = 0
 
 # ----------------------------------------------------------------
 # functions
@@ -93,13 +96,13 @@ def compile_check(compiler,ccflags,warn):
   if os.path.isfile("tmpauto.o"): os.remove("tmpauto.o")
   return flag
 
-# check if linker works with linkflags on tmpauto.o file
+# check if linker works with linkflags and libs on tmpauto.o file
 # return 1 if successful, else 0
 # warn = 1 = print warning if not successful, warn = 0 = no warning
 
-def link_check(linker,linkflags,warn):
+def link_check(linker,linkflags,libs,warn):
   open("tmpauto.cpp",'w').write("int main(int, char **) {}\n")
-  str = "%s %s -o tmpauto tmpauto.cpp" % (linker,linkflags)
+  str = "%s %s -o tmpauto tmpauto.cpp %s" % (linker,linkflags,libs)
   txt = commands.getoutput(str)
   flag = 1
   if txt or not os.path.isfile("tmpauto"):
@@ -284,11 +287,10 @@ class Actions:
           else: wrapper = cc.wrap
           abbrev = cc.abbrev
           if abbrev == "mpi":
-            txt = commands.getoutput("mpicxx -show")
-            if "-lmpich" in txt:
+            if cc.parent == "mpich":
               make.addvar("CC","-cxx=%s" % wrapper)
               make.addvar("LINK","-cxx=%s" % wrapper)
-            elif "-lmpi" in txt:
+            elif cc.parent == "openmpi":
               make.addvar("export OMPI_CXX",wrapper,"cc")
               precompiler = "env OMPI_CXX=%s " % wrapper
             else: error("Could not add MPI wrapper compiler, " +
@@ -298,18 +300,6 @@ class Actions:
         make.setvar("LINKFLAGS","-g")
         make.addvar("LINKFLAGS","-O")
         
-      # add CC and LINK flags
-
-      if flags:
-        for flag in flags.CC:
-          flag = "-" + flag
-          if flag[:2] == "-O": make.delvar("CCFLAGS","-O*")
-          make.addvar("CCFLAGS",flag)
-        for flag in flags.LINK:
-          flag = "-" + flag
-          if flag[:2] == "-O": make.delvar("LINKFLAGS","-O*")
-          make.addvar("LINKFLAGS",flag)
-
       # add MPI settings
 
       if mpi:
@@ -358,23 +348,48 @@ class Actions:
 
       if final["user-intel"]:
         if intel.mode == "cpu":
-          if compile_check(compiler,"-fopenmp",1):
-            make.addvar("CCFLAGS","-fopenmp")
-            make.addvar("LINKFLAGS","-fopenmp")
-          make.addvar("CCFLAGS","-DLAMMPS_MEMALIGN=64")
+          make.delvar("CCFLAGS","-O*")
+          make.addvar("CCFLAGS","-O2")
+          if compile_check(compiler,"-openmp",1):
+            make.addvar("CCFLAGS","-openmp")
           if compile_check(compiler,"-restrict",1):
             make.addvar("CCFLAGS","-restrict")
-          if compile_check(compiler,"-xHost",1):
-            make.addvar("CCFLAGS","-xHost")
-            make.addvar("LINKFLAGS","-xHost")
+          if compile_check(compiler,"-no-offload",1):
+            make.addvar("CCFLAGS","-no-offload")
           if compile_check(compiler,"-fno-alias",1):
             make.addvar("CCFLAGS","-fno-alias")
           if compile_check(compiler,"-ansi-alias",1):
             make.addvar("CCFLAGS","-ansi-alias")
+          if compile_check(compiler,"-xAVX",1):
+            make.addvar("CCFLAGS","-xAVX")
+          if compile_check(compiler,"-fp-model fast=2",1):
+            make.addvar("CCFLAGS","-fp-model fast=2")
+          if compile_check(compiler,"-no-prec-div",1):
+            make.addvar("CCFLAGS","-no-prec-div")
           if compile_check(compiler,"-override-limits",1):
             make.addvar("CCFLAGS","-override-limits")
+          make.addvar("CCFLAGS","-DLAMMPS_MEMALIGN=64")
           make.delvar("CCFLAGS","-DLMP_INTEL_OFFLOAD")
+
+          make.delvar("LINKFLAGS","-O*")
+          make.addvar("LINKFLAGS","-O2")
+          if link_check(linker,"-openmp","",1):
+            make.addvar("LINKFLAGS","-openmp")
+          if link_check(linker,"-xAVX","",1):
+            make.addvar("LINKFLAGS","-xAVX")
+          if link_check(linker,"-fpmodel fast=2","",1):
+            make.addvar("LINKFLAGS","-fpmodel fast=2")
+          if link_check(linker,"-no-prec-div","",1):
+            make.addvar("LINKFLAGS","-no-prec-div")
+          if link_check(linker,"-override-limits","",1):
+            make.addvar("LINKFLAGS","-override-limits")
           make.delvar("LINKFLAGS","-offload")
+
+          if link_check(linker,"","-ltbbmalloc",1):
+            make.addvar("LIB","-ltbbmalloc")
+          if link_check(linker,"","-ltbbmalloc_proxy",1):
+            make.addvar("LIB","-ltbbmalloc_proxy")
+            
         elif intel.mode == "phi":
           if compile_check(compiler,"-fopenmp",1):
             make.addvar("CCFLAGS","-fopenmp")
@@ -397,7 +412,7 @@ class Actions:
             make.addvar("CCFLAGS",'-offload-option,mic,compiler,' +
                         '"-fp-model fast=2 -mGLOB_default_function_attrs=' +
                         '\\"gather_scatter_loop_unroll=4\\""')
-          if link_check(linker,"-offload",1):
+          if link_check(linker,"-offload","",1):
             make.addvar("LINKFLAGS","-offload")
 
       if final["kokkos"]:
@@ -405,14 +420,18 @@ class Actions:
           make.delvar("KOKKOS_DEVICES","*")
           make.delvar("KOKKOS_ARCH","*")
           make.addvar("KOKKOS_DEVICES","OpenMP","lmp")
+          if kokkos.archcpu:
+            make.addvar("KOKKOS_ARCH",kokkos.archcpu,"lmp")
         elif kokkos.mode == "cuda":
           make.delvar("KOKKOS_DEVICES","*")
           make.delvar("KOKKOS_ARCH","*")
           make.addvar("KOKKOS_DEVICES","Cuda, OpenMP","lmp")
-          if kokkos.arch[0] == "3":
-            make.addvar("KOKKOS_ARCH","Kepler" + kokkos.arch,"lmp")
-          elif kokkos.arch[0] == "2":
-            make.addvar("KOKKOS_ARCH","Fermi" + kokkos.arch,"lmp")
+          if kokkos.archgpu:
+            if kokkos.archgpu[0] == "3": value = "Kepler" + kokkos.archgpu
+            elif kokkos.archgpu[0] == "2": value = "Fermi" + kokkos.archgpu
+            else: error("Unrecognized Kokkos archgpu setting")
+          if kokkos.archcpu: value += ", %s" % kokkos.archcpu
+          make.addvar("KOKKOS_ARCH",value,"lmp")
         elif kokkos.mode == "phi":
           make.delvar("KOKKOS_DEVICES","*")
           make.delvar("KOKKOS_ARCH","*")
@@ -485,6 +504,18 @@ class Actions:
             if png.incdir: make.addvar("JPG_INC","-I%s" % png.incdir)
             if png.libdir: make.addvar("JPG_PATH","-L%s" % png.libdir)
 
+      # finally after all other settings, add explicit flags
+
+      if flags:
+        for var,action,flist in flags.flags:
+          values = make.getvar(var)
+          if values == None:
+            error("Flags for a non-existent Makefile.auto variable")
+          for flag in flist:
+            flag = "-" + flag
+            if action == "add": make.addvar(var,flag)
+            elif action == "del": make.delvar(var,flag)
+
     # set self.stubs if Makefile.auto uses STUBS lib in MPI settings
 
     if make.getvar("MPI_LIB") and "-lmpi_stubs" in make.getvar("MPI_LIB"):
@@ -506,9 +537,10 @@ class Actions:
     ccflags = ' '.join(make.getvar("CCFLAGS"))
     linker = precompiler + ' '.join(make.getvar("LINK"))
     linkflags = ' '.join(make.getvar("LINKFLAGS"))
+    libs = ' '.join(make.getvar("LIB"))
     if not compile_check(compiler,ccflags,1):
       error("Test of compilation failed")
-    if not link_check(linker,linkflags,1): error("Test of link failed")
+    if not link_check(linker,linkflags,libs,1): error("Test of link failed")
 
   # invoke "make clean-auto" to force clean before build
     
@@ -611,7 +643,7 @@ Syntax: Make.py switch args ...
     -r (redo), -s (settings), -v (verbose), -z (makefile output)
   switches for libs:
     -atc, -awpmd, -colvars, -cuda, -gpu, -h5md,
-    -meam, -poems, -python, -qmmm, -reax, -voronoi
+    -meam, -poems, -python, -qmmm, -voronoi
   switches for build and makefile options:
     -intel, -kokkos, -cc, -flags, -mpi, -fft, -jpg, -png
 """
@@ -971,7 +1003,9 @@ class Zoutput:
     return """
 -z machine
   copy created/used src/MAKE/MINE/Makefile.auto to Makefile.machine in same dir
-  this can be used to preserve the machine makefile
+  copy created/used lib/*/Makefile.auto and lib/*/Makefile.lammps to
+    Makefile_lib.machine and Makefile_lib_lammps.machine in same dir
+  this can be used to preserve the machine Makefile and lib Makefiles
 """
 
   def check(self):
@@ -1240,6 +1274,8 @@ class GPU:
         error("-gpu args are invalid")
 
   def build(self):
+    global gpubuildflag
+    gpubuildflag = 1
     libdir = dir.lib + "/gpu"
     make = MakeReader("%s/Makefile.%s" % (libdir,self.make))
     if self.modeflag:
@@ -1518,57 +1554,6 @@ class QMMM:
       error("Unsuccessful build of lib/qmmm library")
     else: print "Created lib/qmmm library"
 
-# REAX lib
-
-class REAX:
-  def __init__(self,list):
-    self.inlist = copy.copy(list)
-    self.make = "gfortran"
-    self.lammpsflag = 0
-
-  def help(self):
-    return """
--reax make=suffix lammps=suffix2
-  all args are optional and can be in any order
-  make = use Makefile.suffix (def = gfortran)
-  lammps = use Makefile.lammps.suffix2 (def = EXTRAMAKE in makefile)
-"""
-
-  def check(self):
-    if self.inlist != None and len(self.inlist) == 0:
-      error("-reax args are invalid")
-    for one in self.inlist:
-      words = one.split('=')
-      if len(words) != 2: error("-reax args are invalid")
-      if words[0] == "make": self.make = words[1]
-      elif words[0] == "lammps": 
-        self.lammps = words[1]
-        self.lammpsflag = 1
-      else: error("-reax args are invalid")
-
-  def build(self):
-    libdir = dir.lib + "/reax"
-    make = MakeReader("%s/Makefile.%s" % (libdir,self.make))
-    if self.lammpsflag:
-      make.setvar("EXTRAMAKE","Makefile.lammps.%s" % self.lammps)
-    make.write("%s/Makefile.auto" % libdir)
-
-    commands.getoutput("cd %s; make -f Makefile.auto clean" % libdir)
-    if jmake: str = "cd %s; make -j %d -f Makefile.auto" % (libdir,jmake.n)
-    else: str = "cd %s; make -f Makefile.auto" % libdir
-    
-    # if verbose, print output as build proceeds, else only print if fails
-
-    if verbose: subprocess.call(str,shell=True)
-    else:
-      try: subprocess.check_output(str,stderr=subprocess.STDOUT,shell=True)
-      except Exception as e: print e.output
-
-    if not os.path.isfile("%s/libreax.a" % libdir) or \
-          not os.path.isfile("%s/Makefile.lammps" % libdir):
-      error("Unsuccessful build of lib/reax library")
-    else: print "Created lib/reax library"
-
 # VORONOI lib
 
 class VORONOI:
@@ -1634,17 +1619,21 @@ class Kokkos:
   def __init__(self,list):
     self.inlist = copy.copy(list)
     self.mode = ""
-    self.archflag = 0
+    self.archgpu = None
+    self.archcpu = None
     
   def help(self):
     return """
--kokkos mode arch=N
+-kokkos mode archgpu=N archcpu=SNB
   mode is not optional, arch is optional
   mode = omp or cuda or phi (def = KOKKOS_DEVICES setting in Makefile )
     build Kokkos package for omp or cuda or phi
     sets KOKKOS_DEVICES to "OpenMP" (omp, phi) or "Cuda, OpenMP" (cuda)
-  arch = number like 35 (Kepler) or 21 (Fermi)
-    sets KOKKOS_ARCH to appropriate value
+  archgpu = number like 35 (Kepler) or 21 (Fermi) (def = none)
+    sets KOKKOS_ARCH for GPU to appropriate value
+  archcpu = SNB or HSW or BGQ or Power7 or Power8 (def = none)
+    for CPU = SandyBridge, Haswell, BGQ, Power7, Power8
+    sets KOKKOS_ARCH for GPU to appropriate value
 """
 
   def check(self):
@@ -1660,9 +1649,8 @@ class Kokkos:
     for one in self.inlist[1:]:
       words = one.split('=')
       if len(words) != 2: error("-kokkos args are invalid")
-      if words[0] == "arch":
-        self.arch = words[1]
-        self.archflag = 1
+      if words[0] == "archgpu": self.archgpu = words[1]
+      elif words[0] == "archcpu": self.archcpu = words[1]
       else: error("-kokkos args are invalid")
       
 # ----------------------------------------------------------------
@@ -1676,10 +1664,11 @@ class Cc:
     self.inlist = copy.copy(list)
     self.compiler = self.abbrev = ""
     self.wrap = ""
+    self.parent = ""
 
   def help(self):
     return """
--cc compiler wrap=wcompiler
+-cc compiler wrap=wcompiler,parent
   alter CC setting in Makefile.auto
     only happens if new Makefile.auto is created by use of "file" action
   compiler is required, all other args are optional
@@ -1689,6 +1678,8 @@ class Cc:
     mpi by itself is changed to mpicxx
   wcompiler = compiler for mpi wrapper to use
     use nvcc for building for Kokkos/cuda with provided nvcc_wrapper
+  parent = openmpi or mpich
+    parent style determines syntax for setting low-level compiler
 """
 
   def check(self):
@@ -1710,9 +1701,12 @@ class Cc:
     for one in self.inlist[1:]:
       words = one.split('=')
       if len(words) != 2: error("-cc args are invalid")
+      args = words[1].split(',')
+      if len(args) != 2: error("-cc args are invalid")
       if words[0] == "wrap":
         if self.abbrev != "mpi": error("-cc compiler is not a wrapper")
-        self.wrap = words[1]
+        self.wrap = args[0]
+        self.parent = args[1]
       else: error("-cc args are invalid")
 
 # Flags class
@@ -1720,36 +1714,42 @@ class Cc:
 class Flags:
   def __init__(self,list):
     self.inlist = copy.copy(list)
-    self.CC = []
-    self.LINK = []
+    self.flags = []
     
   def help(self):
     return """
--flags flag f1 f2 ... flag f1 f2 ... 
-  alter CCFLAGS or LINKFLAGS settings in Makefile.auto
+-flags var action N f1 f2 ... var action N f1 f2 ... 
+  alter variable settings (flags) in Makefile.auto
     only happens if new Makefile.auto is created by use of "file" action
-  flag = CC or LINK
-    one or both can be specified
-  f1,f2,etc = flag to add or replace
-    "-" char will be prepended to each
-    for example: g, O3, xHost, "fp-model fast=2"
-    will become: -g, -O3, -xHost, -fp-model fast=2
+  var = CCFLAGS, LINKFLAGS, LIB, etc
+    any variable in Makefile.auto, must already exist
+  action = add or del
+  N = # of flags to follow
+  f1,f2,etc = flag to add or delete
+    "-" char will be prepended to each flag
+      for example: add 4 g O3 xHost "fp-model fast=2"
+      will add: -g -O3 -xHost -fp-model fast=2
+    for add: if flag already exists, no change is made
+    for delete: flag of form "-O*", will delete any wildcard match
     for -O,-O2,-O3,etc: existing -O* will first be removed
 """
 
   def check(self):
     if len(self.inlist) < 1: error("-flags args are invalid")
-    self.CC = []     # necessary?
-    self.LINK = []
-    mode = ""
-    for one in self.inlist:
-      if one == "CC": mode = "CC"
-      elif one == "LINK": mode = "LINK"
-      else:
-        if not mode: error("-flags args are invalid")
-        if mode == "CC": self.CC.append(one)
-        elif mode == "LINK": self.LINK.append(one)
-    
+    narg = len(self.inlist)
+    i = 0
+    while i < narg:
+      if i+3 > narg: error("-flags args are invalid")
+      var = self.inlist[i]
+      action = self.inlist[i+1]
+      if action != "add" and action != "del": error("-flags args are invalid")
+      nflag = int(self.inlist[i+2])
+      i += 3
+      if i+nflag > narg: error("-flags args are invalid")
+      flags = self.inlist[i:i+nflag]
+      self.flags.append([var,action,flags])
+      i += nflag
+      
 # Mpi class
 
 class Mpi:
@@ -1941,7 +1941,8 @@ class MakeReader:
     # varinfo = list of variable info: (name, name with whitespace for print)
     # add index into varinfo to newlines
     # ccindex = index of "CC =" line, to add OMPI var before it
-    # lmpindex = index of "LAMMPS-specific settings" line to add KOKKOS vars before it
+    # lmpindex = index of "LAMMPS-specific settings"
+    #   line to add KOKKOS vars before it
     
     var = {}
     varinfo = []
@@ -2262,14 +2263,26 @@ while 1:
     print "Created lmp_%s in %s" % (output.machine,dir.cwd)
 
   # create copy of Makefile.auto if requested, and file or exe action performed
-
+  # ditto for library Makefile.auto and Makefile.lammps files
+    
   if zoutput and actions and \
         ("file" in actions.alist or "exe" in actions.alist):
     txt = "cp %s/MAKE/MINE/Makefile.auto %s/MAKE/MINE/Makefile.%s" % \
         (dir.src,dir.src,zoutput.machine)
     commands.getoutput(txt)
     print "Created Makefile.%s in %s/MAKE/MINE" % (zoutput.machine,dir.src)
-
+    if gpubuildflag:
+      txt = "cp %s/gpu/Makefile.auto %s/MAKE/MINE/Makefile_gpu.%s" % \
+          (dir.lib,dir.src,zoutput.machine)
+      commands.getoutput(txt)
+      print "Created Makefile_gpu.%s in %s/MAKE/MINE" % \
+          (zoutput.machine,dir.src)
+      txt = "cp %s/gpu/Makefile.lammps %s/MAKE/MINE/Makefile_gpu_lammps.%s" % \
+          (dir.lib,dir.src,zoutput.machine)
+      commands.getoutput(txt)
+      print "Created Makefile_gpu_lammps.%s in %s/MAKE/MINE" % \
+          (zoutput.machine,dir.src)
+      
   # write current Make.py command to src/Make.py.last
 
   fp = open("%s/Make.py.last" % dir.src,'w')
