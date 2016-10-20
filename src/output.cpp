@@ -30,7 +30,6 @@
 #include "force.h"
 #include "dump.h"
 #include "write_restart.h"
-#include "accelerator_cuda.h"
 #include "memory.h"
 #include "error.h"
 
@@ -44,7 +43,7 @@ using namespace LAMMPS_NS;
 
 Output::Output(LAMMPS *lmp) : Pointers(lmp)
 {
-  // create default computes for temp,pressure,pe
+  // create default computes for temp,pressure,pe,ke
 
   char **newarg = new char*[4];
   newarg[0] = (char *) "thermo_temp";
@@ -61,6 +60,11 @@ Output::Output(LAMMPS *lmp) : Pointers(lmp)
   newarg[0] = (char *) "thermo_pe";
   newarg[1] = (char *) "all";
   newarg[2] = (char *) "pe";
+  modify->add_compute(3,newarg,1);
+
+  newarg[0] = (char *) "thermo_ke";
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "ke";
   modify->add_compute(3,newarg,1);
 
   delete [] newarg;
@@ -90,6 +94,15 @@ Output::Output(LAMMPS *lmp) : Pointers(lmp)
   restart1 = restart2a = restart2b = NULL;
   var_restart_single = var_restart_double = NULL;
   restart = NULL;
+
+  dump_map = new DumpCreatorMap();
+
+#define DUMP_CLASS
+#define DumpStyle(key,Class) \
+  (*dump_map)[#key] = &dump_creator<Class>;
+#include "style_dump.h"
+#undef DumpStyle
+#undef DUMP_CLASS
 }
 
 /* ----------------------------------------------------------------------
@@ -116,6 +129,8 @@ Output::~Output()
   delete [] var_restart_single;
   delete [] var_restart_double;
   delete restart;
+
+  delete dump_map;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -290,11 +305,8 @@ void Output::write(bigint ntimestep)
 {
   // next_dump does not force output on last step of run
   // wrap dumps that invoke computes or eval of variable with clear/add
-  // download data from GPU if necessary
 
   if (next_dump_any == ntimestep) {
-    if (lmp->cuda && !lmp->cuda->oncpu) lmp->cuda->downloadAll();
-
     for (int idump = 0; idump < ndump; idump++) {
       if (next_dump[idump] == ntimestep) {
         if (dump[idump]->clearstep || every_dump[idump] == 0)
@@ -321,12 +333,9 @@ void Output::write(bigint ntimestep)
 
   // next_restart does not force output on last step of run
   // for toggle = 0, replace "*" with current timestep in restart filename
-  // download data from GPU if necessary
   // eval of variable may invoke computes so wrap with clear/add
 
   if (next_restart == ntimestep) {
-    if (lmp->cuda && !lmp->cuda->oncpu) lmp->cuda->downloadAll();
-
     if (next_restart_single == ntimestep) {
       char *file = new char[strlen(restart1) + 16];
       char *ptr = strchr(restart1,'*');
@@ -578,14 +587,10 @@ void Output::add_dump(int narg, char **arg)
 
   // create the Dump
 
-  if (0) return;         // dummy line to enable else-if macro expansion
-
-#define DUMP_CLASS
-#define DumpStyle(key,Class) \
-  else if (strcmp(arg[2],#key) == 0) dump[ndump] = new Class(lmp,narg,arg);
-#include "style_dump.h"
-#undef DUMP_CLASS
-
+  if (dump_map->find(arg[2]) != dump_map->end()) {
+    DumpCreator dump_creator = (*dump_map)[arg[2]];
+    dump[ndump] = dump_creator(lmp, narg, arg);
+  }
   else error->all(FLERR,"Unknown dump style");
 
   every_dump[ndump] = force->inumeric(FLERR,arg[3]);
@@ -593,6 +598,16 @@ void Output::add_dump(int narg, char **arg)
   last_dump[ndump] = -1;
   var_dump[ndump] = NULL;
   ndump++;
+}
+
+/* ----------------------------------------------------------------------
+   one instance per dump style in style_dump.h
+------------------------------------------------------------------------- */
+
+template <typename T>
+Dump *Output::dump_creator(LAMMPS *lmp, int narg, char ** arg)
+{
+  return new T(lmp, narg, arg);
 }
 
 /* ----------------------------------------------------------------------

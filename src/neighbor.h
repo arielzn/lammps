@@ -71,10 +71,6 @@ class Neighbor : protected Pointers {
 
   int cluster_check;               // 1 if check bond/angle/etc satisfies minimg
 
-  // USER-DPD package
-
-  int *ssa_airnum;              // AIR number of each atom for SSA in USER-DPD
-
   // methods
 
   Neighbor(class LAMMPS *);
@@ -90,14 +86,11 @@ class Neighbor : protected Pointers {
   void build_one(class NeighList *list,
                  int preflag=0);    // create a single one-time neigh list
   void set(int, char **);           // set neighbor style and skin distance
+  void reset_timestep(bigint);      // reset of timestep counter
   void modify_params(int, char**);  // modify parameters that control builds
   bigint memory_usage();
   int exclude_setting();
   void exclusion_group_group_delete(int, int);  // rm a group-group exclusion
-
-  // USER-DPD package
-
-  void assign_ssa_airnums();       // set ssa_airnum values
 
  protected:
   int me,nprocs;
@@ -182,14 +175,7 @@ class Neighbor : protected Pointers {
   int *glist;                  // lists to grow atom arrays every reneigh
   int *slist;                  // lists to grow stencil arrays every reneigh
 
-  // USER-DPD package
-
-  int len_ssa_airnum;        // length of ssa_airnum array
-  int *bins_ssa;             // ptr to next atom in each bin used by SSA
-  int maxbin_ssa;            // size of bins array used by SSA
-  int *binhead_ssa;          // ptr to 1st atom in each bin used by SSA
-  int *gbinhead_ssa;         // ptr to 1st ghost atom in each bin used by SSA
-  int maxhead_ssa;           // size of binhead array used by SSA
+  double *zeroes;              // vector of zeroes for shear history init
 
   // methods
 
@@ -245,17 +231,12 @@ class Neighbor : protected Pointers {
   void full_bin_ghost(class NeighList *);
   void full_multi(class NeighList *);
 
-  void half_from_full_no_newton(class NeighList *);
-  void half_from_full_newton(class NeighList *);
-  void skip_from(class NeighList *);
-  void skip_from_granular(class NeighList *);
-  void skip_from_respa(class NeighList *);
-  void copy_from(class NeighList *);
-
   void granular_nsq_no_newton(class NeighList *);
   void granular_nsq_newton(class NeighList *);
+  void granular_nsq_newton_onesided(class NeighList *);
   void granular_bin_no_newton(class NeighList *);
   void granular_bin_newton(class NeighList *);
+  void granular_bin_newton_onesided(class NeighList *);
   void granular_bin_newton_tri(class NeighList *);
 
   void respa_nsq_no_newton(class NeighList *);
@@ -263,6 +244,15 @@ class Neighbor : protected Pointers {
   void respa_bin_no_newton(class NeighList *);
   void respa_bin_newton(class NeighList *);
   void respa_bin_newton_tri(class NeighList *);
+
+  void half_from_full_no_newton(class NeighList *);
+  void half_from_full_newton(class NeighList *);
+  void skip_from(class NeighList *);
+  void skip_from_granular(class NeighList *);
+  void skip_from_granular_off2on(class NeighList *);
+  void skip_from_granular_off2on_onesided(class NeighList *);
+  void skip_from_respa(class NeighList *);
+  void copy_from(class NeighList *);
 
   // include prototypes for multi-threaded neighbor lists
   // builds or their corresponding dummy versions
@@ -328,8 +318,6 @@ class Neighbor : protected Pointers {
   void improper_partial();            // exclude certain impropers
 
   // SSA neighboring for USER-DPD
-
-  int coord2ssa_airnum(double *);  // map atom coord to an AIR number
 
   void half_bin_newton_ssa(NeighList *);
   void half_from_full_newton_ssa(class NeighList *);

@@ -56,7 +56,8 @@ using namespace MathConst;
 /* ---------------------------------------------------------------------- */
 
 FixAtomSwap::FixAtomSwap(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  idregion(NULL), type_list(NULL), mu(NULL), qtype(NULL), sqrt_mass_ratio(NULL), random_equal(NULL), random_unequal(NULL)
 {
   if (narg < 10) error->all(FLERR,"Illegal fix atom/swap command");
 
@@ -68,9 +69,7 @@ FixAtomSwap::FixAtomSwap(LAMMPS *lmp, int narg, char **arg) :
   extvector = 0;
   restart_global = 1;
   time_depend = 1;
-  type_list = NULL;
-  qtype = NULL;
-
+  
   // required args
 
   nevery = force->inumeric(FLERR,arg[3]);
@@ -251,15 +250,15 @@ void FixAtomSwap::init()
 	    } else if (qtype[iswaptype] != atom->q[i])
 	      error->one(FLERR,"All atoms of a swapped type must have the same charge.");
 	  }
-	  MPI_Allreduce(&first,&firstall,1,MPI_INT,MPI_MIN,world);
-	  if (firstall) error->all(FLERR,"At least one atom of each swapped type must be present to define charges.");
-	  if (first) qtype[iswaptype] = -DBL_MAX;
-	  MPI_Allreduce(&qtype[iswaptype],&qmax,1,MPI_DOUBLE,MPI_MAX,world);
-	  if (first) qtype[iswaptype] = DBL_MAX;
-	  MPI_Allreduce(&qtype[iswaptype],&qmin,1,MPI_DOUBLE,MPI_MIN,world);
-	  if (qmax != qmin) error->all(FLERR,"All atoms of a swapped type must have same charge.");
 	}
       }
+      MPI_Allreduce(&first,&firstall,1,MPI_INT,MPI_MIN,world);
+      if (firstall) error->all(FLERR,"At least one atom of each swapped type must be present to define charges.");
+      if (first) qtype[iswaptype] = -DBL_MAX;
+      MPI_Allreduce(&qtype[iswaptype],&qmax,1,MPI_DOUBLE,MPI_MAX,world);
+      if (first) qtype[iswaptype] = DBL_MAX;
+      MPI_Allreduce(&qtype[iswaptype],&qmin,1,MPI_DOUBLE,MPI_MIN,world);
+      if (qmax != qmin) error->all(FLERR,"All atoms of a swapped type must have same charge.");
     }
   }
 

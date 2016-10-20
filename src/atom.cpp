@@ -32,7 +32,6 @@
 #include "domain.h"
 #include "group.h"
 #include "molecule.h"
-#include "accelerator_cuda.h"
 #include "atom_masks.h"
 #include "math_const.h"
 #include "memory.h"
@@ -44,7 +43,6 @@ using namespace MathConst;
 #define DELTA 1
 #define DELTA_MEMSTR 1024
 #define EPSILON 1.0e-6
-#define CUDA_CHUNK 3000
 
 enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
@@ -93,11 +91,21 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   rho = drho = e = de = cv = NULL;
   vest = NULL;
 
+  // USER-HAdResS package
+
+  lambdaH = NULL;
+  gradlambdaH = NULL;
+  replambdaH = NULL;
+  moltypeH = NULL;
+  comH = NULL;
+  nmoltypesH = 0;
+
   // USER-DPD
 
   uCond = uMech = uChem = uCG = uCGnew = NULL;
-  duCond = duMech = duChem = NULL;
+  duChem = NULL;
   dpdTheta = NULL;
+  ssaAIR = NULL;
 
   // USER-SMD
 
@@ -209,8 +217,14 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   atom_style = NULL;
   avec = NULL;
 
-  datamask = ALL_MASK;
-  datamask_ext = ALL_MASK;
+  avec_map = new AtomVecCreatorMap();
+
+#define ATOM_CLASS
+#define AtomStyle(key,Class) \
+  (*avec_map)[#key] = &avec_creator<Class>;
+#include "style_atom.h"
+#undef AtomStyle
+#undef ATOM_CLASS
 }
 
 /* ---------------------------------------------------------------------- */
@@ -219,6 +233,7 @@ Atom::~Atom()
 {
   delete [] atom_style;
   delete avec;
+  delete avec_map;
 
   delete [] firstgroupname;
   memory->destroy(binhead);
@@ -239,6 +254,12 @@ Atom::~Atom()
   memory->destroy(molecule);
   memory->destroy(molindex);
   memory->destroy(molatom);
+
+  memory->destroy(lambdaH);
+  memory->destroy(replambdaH);
+  memory->destroy(moltypeH);
+  memory->destroy(gradlambdaH);
+  memory->destroy(comH);
 
   memory->destroy(q);
   memory->destroy(mu);
@@ -286,9 +307,8 @@ Atom::~Atom()
   memory->destroy(uChem);
   memory->destroy(uCG);
   memory->destroy(uCGnew);
-  memory->destroy(duCond);
-  memory->destroy(duMech);
   memory->destroy(duChem);
+  memory->destroy(ssaAIR);
 
   memory->destroy(nspecial);
   memory->destroy(special);
@@ -392,6 +412,12 @@ void Atom::create_avec(const char *style, int narg, char **arg, int trysuffix)
 
   molecule_flag = 0;
   q_flag = mu_flag = 0;
+
+  // USER-HAdResS
+
+  replambdaH_flag = 0;
+  moltypeH_flag = 0;
+
   omega_flag = torque_flag = angmom_flag = 0;
   radius_flag = rmass_flag = 0;
   ellipsoid_flag = line_flag = tri_flag = body_flag = 0;
@@ -447,44 +473,41 @@ AtomVec *Atom::new_avec(const char *style, int trysuffix, int &sflag)
       sflag = 1;
       char estyle[256];
       sprintf(estyle,"%s/%s",style,lmp->suffix);
-
-      if (0) return NULL;
-
-#define ATOM_CLASS
-#define AtomStyle(key,Class) \
-      else if (strcmp(estyle,#key) == 0) return new Class(lmp);
-#include "style_atom.h"
-#undef AtomStyle
-#undef ATOM_CLASS
+      if (avec_map->find(estyle) != avec_map->end()) {
+        AtomVecCreator avec_creator = (*avec_map)[estyle];
+        return avec_creator(lmp);
+      }
     }
 
     if (lmp->suffix2) {
       sflag = 2;
       char estyle[256];
       sprintf(estyle,"%s/%s",style,lmp->suffix2);
-
-      if (0) return NULL;
-
-#define ATOM_CLASS
-#define AtomStyle(key,Class) \
-      else if (strcmp(estyle,#key) == 0) return new Class(lmp);
-#include "style_atom.h"
-#undef AtomStyle
-#undef ATOM_CLASS
+      if (avec_map->find(estyle) != avec_map->end()) {
+        AtomVecCreator avec_creator = (*avec_map)[estyle];
+        return avec_creator(lmp);
+      }
     }
   }
 
   sflag = 0;
-  if (0) return NULL;
+  if (avec_map->find(style) != avec_map->end()) {
+    AtomVecCreator avec_creator = (*avec_map)[style];
+    return avec_creator(lmp);
+  }
 
-#define ATOM_CLASS
-#define AtomStyle(key,Class) \
-  else if (strcmp(style,#key) == 0) return new Class(lmp);
-#include "style_atom.h"
-#undef ATOM_CLASS
-
-  else error->all(FLERR,"Unknown atom style");
+  error->all(FLERR,"Unknown atom style");
   return NULL;
+}
+
+/* ----------------------------------------------------------------------
+   one instance per AtomVec style in style_atom.h
+------------------------------------------------------------------------- */
+
+template <typename T>
+AtomVec *Atom::avec_creator(LAMMPS *lmp)
+{
+  return new T(lmp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1483,7 +1506,8 @@ void Atom::check_mass()
 {
   if (mass == NULL) return;
   for (int itype = 1; itype <= ntypes; itype++)
-    if (mass_setflag[itype] == 0) error->all(FLERR,"All masses are not set");
+    if (mass_setflag[itype] == 0) 
+      error->all(FLERR,"Not all per-type masses are set");
 }
 
 /* ----------------------------------------------------------------------
@@ -1590,6 +1614,7 @@ void Atom::add_molecule(int narg, char **arg)
 
 int Atom::find_molecule(char *id)
 {
+  if(id == NULL) return -1;
   int imol;
   for (imol = 0; imol < nmolecule; imol++)
     if (strcmp(id,molecules[imol]->id) == 0) return imol;
@@ -1608,6 +1633,8 @@ void Atom::add_molecule_atom(Molecule *onemol, int iatom,
   if (onemol->qflag && q_flag) q[ilocal] = onemol->q[iatom];
   if (onemol->radiusflag && radius_flag) radius[ilocal] = onemol->radius[iatom];
   if (onemol->rmassflag && rmass_flag) rmass[ilocal] = onemol->rmass[iatom];
+  if (onemol->replambdaHflag && replambdaH_flag) replambdaH[ilocal] = onemol->replambdaH[iatom];
+  if (onemol->moltypeHflag && moltypeH_flag) moltypeH[ilocal] = onemol->moltypeH[iatom];
   else if (rmass_flag)
     rmass[ilocal] = 4.0*MY_PI/3.0 *
       radius[ilocal]*radius[ilocal]*radius[ilocal];
@@ -1716,10 +1743,6 @@ void Atom::sort()
 
   nextsort = (update->ntimestep/sortfreq)*sortfreq + sortfreq;
 
-  // download data from GPU if necessary
-
-  if (lmp->cuda && !lmp->cuda->oncpu) lmp->cuda->downloadAll();
-
   // re-setup sort bins if needed
 
   if (domain->box_change) setup_sort_bins();
@@ -1795,10 +1818,6 @@ void Atom::sort()
     current[empty] = permute[empty];
   }
 
-  // upload data back to GPU if necessary
-
-  if (lmp->cuda && !lmp->cuda->oncpu) lmp->cuda->uploadAll();
-
   // sanity check that current = permute
 
   //int flag = 0;
@@ -1817,25 +1836,12 @@ void Atom::setup_sort_bins()
 {
   // binsize:
   // user setting if explicitly set
-  // 1/2 of neighbor cutoff for non-CUDA
-  // CUDA_CHUNK atoms/proc for CUDA
+  // default = 1/2 of neighbor cutoff
   // check if neighbor cutoff = 0.0
 
   double binsize;
   if (userbinsize > 0.0) binsize = userbinsize;
-  else if (!lmp->cuda) binsize = 0.5 * neighbor->cutneighmax;
-  else {
-    if (domain->dimension == 3) {
-      double vol = (domain->boxhi[0]-domain->boxlo[0]) *
-        (domain->boxhi[1]-domain->boxlo[1]) *
-        (domain->boxhi[2]-domain->boxlo[2]);
-      binsize = pow(1.0*CUDA_CHUNK/natoms*vol,1.0/3.0);
-    } else {
-      double area = (domain->boxhi[0]-domain->boxlo[0]) *
-        (domain->boxhi[1]-domain->boxlo[1]);
-      binsize = pow(1.0*CUDA_CHUNK/natoms*area,1.0/2.0);
-    }
-  }
+  else binsize = 0.5 * neighbor->cutneighmax;
   if (binsize == 0.0) error->all(FLERR,"Atom sorting has bin size = 0.0");
 
   double bininv = 1.0/binsize;
@@ -1935,6 +1941,8 @@ void Atom::add_callback(int flag)
 
 void Atom::delete_callback(const char *id, int flag)
 {
+  if(id==NULL) return;
+
   int ifix;
   for (ifix = 0; ifix < modify->nfix; ifix++)
     if (strcmp(id,modify->fix[ifix]->id) == 0) break;
@@ -1988,8 +1996,10 @@ void Atom::update_callback(int ifix)
    return -1 if not found
 ------------------------------------------------------------------------- */
 
-int Atom::find_custom(char *name, int &flag)
+int Atom::find_custom(const char *name, int &flag)
 {
+  if(name == NULL) return -1;
+
   for (int i = 0; i < nivector; i++)
     if (iname[i] && strcmp(iname[i],name) == 0) {
       flag = 0;
@@ -2011,7 +2021,7 @@ int Atom::find_custom(char *name, int &flag)
    return index in ivector or dvector of its location
 ------------------------------------------------------------------------- */
 
-int Atom::add_custom(char *name, int flag)
+int Atom::add_custom(const char *name, int flag)
 {
   int index;
 
@@ -2082,6 +2092,9 @@ void *Atom::extract(char *name)
   if (strcmp(name,"f") == 0) return (void *) f;
   if (strcmp(name,"molecule") == 0) return (void *) molecule;
   if (strcmp(name,"q") == 0) return (void *) q;
+  if (strcmp(name,"lambdaH") == 0) return (void *) lambdaH;
+  if (strcmp(name,"gradlambdaH") == 0) return (void *) gradlambdaH;
+  if (strcmp(name,"replambdaH") == 0) return (void *) replambdaH;
   if (strcmp(name,"mu") == 0) return (void *) mu;
   if (strcmp(name,"omega") == 0) return (void *) omega;
   if (strcmp(name,"angmom") == 0) return (void *) angmom;

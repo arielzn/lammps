@@ -50,7 +50,6 @@ class LAMMPS {
   int num_package;               // number of cmdline package commands
   int cite_enable;               // 1 if generating log.cite, 0 if disabled
 
-  class Cuda *cuda;              // CUDA accelerator class
   class KokkosLMP *kokkos;       // KOKKOS accelerator class
   class AtomKokkos *atomKK;      // KOKKOS version of Atom class
 
@@ -167,16 +166,7 @@ E: Cannot use -cuda on and -kokkos on together
 
 This is not allowed since both packages can use GPUs.
 
-E: Cannot use -cuda on without USER-CUDA installed
-
-The USER-CUDA package must be installed via "make yes-user-cuda"
-before LAMMPS is built.
-
 E: Cannot use -kokkos on without KOKKOS installed
-
-Self-explanatory.
-
-E: Using suffix cuda without USER-CUDA package enabled
 
 Self-explanatory.
 

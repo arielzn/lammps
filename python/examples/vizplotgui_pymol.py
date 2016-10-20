@@ -12,6 +12,7 @@
 # IMPORTANT: this script cannot yet be run in parallel via Pypar,
 #            because I can't seem to do a MPI-style broadcast in Pypar
 
+from __future__ import print_function
 import sys,time
 sys.path.append("./pizza")
 
@@ -34,7 +35,7 @@ def quit():
 # read dump snapshot and viz it, update plot with compute value
 
 def update(ntimestep):
-  d.next()
+  next(d)
   d.unscale()
   p.single(ntimestep)
   pm.load("tmp.pdb")
@@ -48,7 +49,7 @@ def update(ntimestep):
 
 argv = sys.argv
 if len(argv) != 4:
-  print "Syntax: vizplotgui_pymol.py in.lammps Nfreq compute-ID"
+  print("Syntax: vizplotgui_pymol.py in.lammps Nfreq compute-ID")
   sys.exit()
 
 infile = sys.argv[1]
@@ -97,7 +98,7 @@ if me == 0:
 
   d = dump("tmp.dump",0)
   p = pdbfile(d)
-  d.next()
+  next(d)
   d.unscale()
   p.single(ntimestep)
   pm.load("tmp.pdb")
@@ -106,7 +107,10 @@ if me == 0:
 # display GUI with run/stop buttons and slider for temperature
 
 if me == 0:
-  from Tkinter import *
+  try:
+    from Tkinter import *
+  except:
+    from tkinter import *
   tkroot = Tk()
   tkroot.withdraw()
   root = Toplevel(tkroot)
@@ -170,5 +174,5 @@ while 1:
 lmp.command("run 0 pre no post yes")
 
 # uncomment if running in parallel via Pypar
-#print "Proc %d out of %d procs has" % (me,nprocs), lmp
+#print("Proc %d out of %d procs has" % (me,nprocs), lmp)
 #pypar.finalize()

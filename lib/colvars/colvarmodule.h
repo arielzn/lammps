@@ -1,15 +1,18 @@
-/// -*- c++ -*-
+// -*- c++ -*-
 
 #ifndef COLVARMODULE_H
 #define COLVARMODULE_H
 
 #ifndef COLVARS_VERSION
-#define COLVARS_VERSION "2016-05-10"
+#define COLVARS_VERSION "2016-10-05"
 #endif
 
 #ifndef COLVARS_DEBUG
 #define COLVARS_DEBUG false
 #endif
+
+/*! \mainpage Main page
+ */
 
 /// \file colvarmodule.h
 /// \brief Collective variables main module
@@ -20,19 +23,16 @@
 /// shared between all object instances) to be accessed from other
 /// objects.
 
-// Error codes are the negative of powers-of-two
-// as a result, error codes should NOT be bitwise-ORed but only
-// accessed through set_error_bit() and get_error_bit()
 #define COLVARS_OK 0
-#define COLVARS_ERROR   -1
-#define COLVARS_NOT_IMPLEMENTED (-1*(1<<1))
-#define INPUT_ERROR     (-1*(1<<2)) // out of bounds or inconsistent input
-#define BUG_ERROR       (-1*(1<<3)) // Inconsistent state indicating bug
-#define FILE_ERROR      (-1*(1<<4))
-#define MEMORY_ERROR    (-1*(1<<5))
-#define FATAL_ERROR     (-1*(1<<6)) // Should be set, or not, together with other bits
-#define DELETE_COLVARS  (-1*(1<<7)) // Instruct the caller to delete cvm
-#define COLVARS_NO_SUCH_FRAME (-1*(1<<8)) // Cannot load the requested frame
+#define COLVARS_ERROR   1
+#define COLVARS_NOT_IMPLEMENTED (1<<1)
+#define INPUT_ERROR     (1<<2) // out of bounds or inconsistent input
+#define BUG_ERROR       (1<<3) // Inconsistent state indicating bug
+#define FILE_ERROR      (1<<4)
+#define MEMORY_ERROR    (1<<5)
+#define FATAL_ERROR     (1<<6) // Should be set, or not, together with other bits
+#define DELETE_COLVARS  (1<<7) // Instruct the caller to delete cvm
+#define COLVARS_NO_SUCH_FRAME (1<<8) // Cannot load the requested frame
 
 #include <iostream>
 #include <iomanip>
@@ -74,9 +74,6 @@ private:
 
 public:
 
-  /// Base class to handle mutual dependencies of most objects
-  class deps;
-
   friend class colvarproxy;
   // TODO colvarscript should be unaware of colvarmodule's internals
   friend class colvarscript;
@@ -115,11 +112,9 @@ protected:
 
 public:
 
-  static void set_error_bit(int code);
+  static void set_error_bits(int code);
 
   static bool get_error_bit(int code);
-
-  static void combine_errors(int &target, int const code);
 
   static inline int get_error()
   {
@@ -371,7 +366,7 @@ public:
   /// Number of characters to represent the collective variables energy
   static size_t const en_width;
   /// Line separator in the log output
-  static std::string const line_marker;
+  static const char * const line_marker;
 
 
   // proxy functions
@@ -389,8 +384,8 @@ public:
   /// \brief Time step of MD integrator (fs)
   static real dt();
 
-  /// Request calculation of system force from MD engine
-  static void request_system_force();
+  /// Request calculation of total force from MD engine
+  static void request_total_force();
 
   /// Print a message to the main log
   static void log(std::string const &message);
@@ -639,9 +634,9 @@ inline int cvm::replica_comm_send(char* msg_data, int msg_len, int dest_rep) {
 }
 
 
-inline void cvm::request_system_force()
+inline void cvm::request_total_force()
 {
-  proxy->request_system_force(true);
+  proxy->request_total_force(true);
 }
 
 inline void cvm::select_closest_image(atom_pos &pos,

@@ -56,7 +56,11 @@ ComputeChunkAtom *ComputeChunkAtom::cptr;
 /* ---------------------------------------------------------------------- */
 
 ComputeChunkAtom::ComputeChunkAtom(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  chunk_volume_vec(NULL), coord(NULL), ichunk(NULL), chunkID(NULL),
+  cfvid(NULL), idregion(NULL), region(NULL), cchunk(NULL), fchunk(NULL),
+  varatom(NULL), id_fix(NULL), fixstore(NULL), lockfix(NULL), chunk(NULL),
+  exclude(NULL), hash(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute chunk/atom command");
 
@@ -159,7 +163,7 @@ ComputeChunkAtom::ComputeChunkAtom(LAMMPS *lmp, int narg, char **arg) :
     char *ptr = strchr(suffix,'[');
     if (ptr) {
       if (suffix[strlen(suffix)-1] != ']')
-        error->all(FLERR,"Illegal fix ave/atom command");
+        error->all(FLERR,"Illegal compute chunk/atom command");
       argindex = atoi(ptr+1);
       *ptr = '\0';
     } else argindex = 0;
@@ -573,7 +577,7 @@ void ComputeChunkAtom::init()
 
   // create/destroy fix STORE for persistent chunk IDs as needed
   // need to do this if idsflag = ONCE or locks will be used by other commands
-  // need to wait until init() so that fix ave/chunk command(s) are in place
+  // need to wait until init() so that fix command(s) are in place
   //   they increment lockcount if they lock this compute
   // fixstore ID = compute-ID + COMPUTE_STORE, fix group = compute group
   // fixstore initializes all values to 0.0
@@ -617,7 +621,7 @@ void ComputeChunkAtom::setup()
 /* ----------------------------------------------------------------------
    only called by classes that use per-atom computes in standard way
      dump, variable, thermo output, other computes, etc
-   not called by fix ave/chunk or compute chunk commands
+   not called by fix chunk or compute chunk commands
      they invoke setup_chunks() and compute_ichunk() directly
 ------------------------------------------------------------------------- */
 
@@ -645,11 +649,11 @@ void ComputeChunkAtom::compute_peratom()
 
 /* ----------------------------------------------------------------------
    set lock, so that nchunk will not change from startstep to stopstep
-   called by fix ave/chunk for duration of its Nfreq epoch
-   OK if called by multiple fix ave/chunk commands
+   called by fix for duration of time it requires lock
+   OK if called by multiple fix commands
      error if all callers do not have same duration
      last caller holds the lock, so it can also unlock
-   lockstop can be positive for final step of finite-size time window
+   stopstep can be positive for final step of finite-size time window
    or can be -1 for infinite-size time window
 ------------------------------------------------------------------------- */
 
@@ -663,7 +667,7 @@ void ComputeChunkAtom::lock(Fix *fixptr, bigint startstep, bigint stopstep)
   }
 
   if (startstep != lockstart || stopstep != lockstop)
-    error->all(FLERR,"Two fix ave commands using "
+    error->all(FLERR,"Two fix commands using "
                "same compute chunk/atom command in incompatible ways");
 
   // set lock to last calling Fix, since it will be last to unlock()
@@ -673,7 +677,7 @@ void ComputeChunkAtom::lock(Fix *fixptr, bigint startstep, bigint stopstep)
 
 /* ----------------------------------------------------------------------
    unset lock
-   can only be done by fix ave/chunk command that holds the lock
+   can only be done by fix command that holds the lock
 ------------------------------------------------------------------------- */
 
 void ComputeChunkAtom::unlock(Fix *fixptr)
@@ -791,7 +795,7 @@ void ComputeChunkAtom::compute_ichunk()
      all atoms will be assigned a chunk ID from 1 to Nchunk, or 0
    also setup any internal state needed to quickly assign atoms to chunks
    called from compute_peratom() and also directly from
-     fix ave/chunk and compute chunk commands
+     fix chunk and compute chunk commands
 ------------------------------------------------------------------------- */
 
 int ComputeChunkAtom::setup_chunks()

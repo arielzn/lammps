@@ -128,17 +128,22 @@ d = dimension and V is the volume of the system, the result should be
 These lines in an input script for a 3d system should yield that
 result.  I.e. the last 2 columns of thermo output will be the same:
 
-compute		peratom all stress/atom NULL
-compute		p all reduce sum c_peratom\[1\] c_peratom\[2\] c_peratom\[3\]
-variable	press equal -(c_p\[1\]+c_p\[2\]+c_p\[3\])/(3*vol)
-thermo_style	custom step temp etotal press v_press :pre
+compute        peratom all stress/atom NULL
+compute        p all reduce sum c_peratom\[1\] c_peratom\[2\] c_peratom\[3\]
+variable       press equal -(c_p\[1\]+c_p\[2\]+c_p\[3\])/(3*vol)
+thermo_style   custom step temp etotal press v_press :pre
+
+NOTE: The per-atom stress does not include any Lennard-Jones tail
+corrections to the pressure added by the "pair_modify tail
+yes"_pair_modify.html command, since those are contributions to the
+global system pressure.
 
 [Output info:]
 
 This compute calculates a per-atom array with 6 columns, which can be
 accessed by indices 1-6 by any command that uses per-atom values from
-a compute as input.  See "Section_howto
-15"_Section_howto.html#howto_15 for an overview of LAMMPS output
+a compute as input.  See "Section
+6.15"_Section_howto.html#howto_15 for an overview of LAMMPS output
 options.
 
 The per-atom array values will be in pressure*volume

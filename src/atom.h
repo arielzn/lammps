@@ -15,6 +15,8 @@
 #define LMP_ATOM_H
 
 #include "pointers.h"
+#include <map>
+#include <string>
 
 namespace LAMMPS_NS {
 
@@ -59,6 +61,14 @@ class Atom : protected Pointers {
   double *radius,*rmass;
   int *ellipsoid,*line,*tri,*body;
 
+  //USER-HAdResS package
+
+  double *lambdaH,**gradlambdaH;
+  int *replambdaH;
+  int *moltypeH;
+  int nmoltypesH;
+  double **comH;
+
   // PERI package
 
   double *vfrac,*s0;
@@ -88,9 +98,10 @@ class Atom : protected Pointers {
   // USER-DPD package
 
   double *uCond,*uMech,*uChem,*uCGnew,*uCG;
-  double *duCond,*duMech,*duChem;
+  double *duChem;
   double *dpdTheta;
   int nspecies_dpd;
+  int *ssaAIR; // Shardlow Splitting Algorithm Active Interaction Region number
 
   // molecular info
 
@@ -121,11 +132,6 @@ class Atom : protected Pointers {
   char **iname,**dname;
   int nivector,ndvector;
 
-  // used by USER-CUDA to flag used per-atom arrays
-
-  unsigned int datamask;
-  unsigned int datamask_ext;
-
   // atom style and per-atom array existence flags
   // customize by adding new flag
 
@@ -141,6 +147,10 @@ class Atom : protected Pointers {
   int cs_flag,csforce_flag,vforce_flag,ervelforce_flag,etag_flag;
   int rho_flag,e_flag,cv_flag,vest_flag;
   int dpd_flag;
+
+  // USER-HAdResS
+
+  int replambdaH_flag, moltypeH_flag;
 
   // USER-SMD package
 
@@ -195,6 +205,12 @@ class Atom : protected Pointers {
   // indices of atoms with same ID
 
   int *sametag;      // sametag[I] = next atom with same ID, -1 if no more
+
+  // AtomVec factory types and map
+
+  typedef AtomVec *(*AtomVecCreator)(LAMMPS *);
+  typedef std::map<std::string,AtomVecCreator> AtomVecCreatorMap;
+  AtomVecCreatorMap *avec_map;
 
   // functions
 
@@ -251,8 +267,8 @@ class Atom : protected Pointers {
   void delete_callback(const char *, int);
   void update_callback(int);
 
-  int find_custom(char *, int &);
-  int add_custom(char *, int);
+  int find_custom(const char *, int &);
+  int add_custom(const char *, int);
   void remove_custom(int, int);
 
   virtual void sync_modify(ExecutionSpace, unsigned int, unsigned int) {}
@@ -321,6 +337,9 @@ class Atom : protected Pointers {
 
   void setup_sort_bins();
   int next_prime(int);
+
+ private:
+  template <typename T> static AtomVec *avec_creator(LAMMPS *);
 };
 
 }

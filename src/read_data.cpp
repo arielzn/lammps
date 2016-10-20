@@ -283,6 +283,7 @@ void ReadData::command(int narg, char **arg)
   }
 
   // set up pointer to hold original styles while we replace them with "zero"
+
   Pair *saved_pair = NULL;
   Bond *saved_bond = NULL;
   Angle *saved_angle = NULL;
@@ -346,6 +347,9 @@ void ReadData::command(int narg, char **arg)
   natoms = ntypes = 0;
   nbonds = nangles = ndihedrals = nimpropers = 0;
   nbondtypes = nangletypes = ndihedraltypes = nimpropertypes = 0;
+
+  boxlo[0] = boxlo[1] = boxlo[2] = -0.5;
+  boxhi[0] = boxhi[1] = boxhi[2] = 0.5;
   triclinic = 0;
   keyword[0] = '\0';
 
@@ -920,14 +924,12 @@ void ReadData::header(int firstpass)
 
     // search line for header keyword and set corresponding variable
     // customize for new header lines
+    // check for triangles before angles so "triangles" not matched as "angles"
 
     if (strstr(line,"atoms")) {
       sscanf(line,BIGINT_FORMAT,&natoms);
       if (addflag == NONE) atom->natoms = natoms;
       else if (firstpass) atom->natoms += natoms;
-
-    // check for these first
-    // otherwise "triangles" will be matched as "angles"
 
     } else if (strstr(line,"ellipsoids")) {
       if (!avec_ellipsoid)
@@ -968,7 +970,13 @@ void ReadData::header(int firstpass)
     } else if (strstr(line,"atom types")) {
       sscanf(line,"%d",&ntypes);
       if (addflag == NONE) atom->ntypes = ntypes + extra_atom_types;
-    } else if (strstr(line,"bond types")) {
+    } else if (strstr(line,"mol_H types")){
+
+        // Number of molecule types in Coarse-grain regions,  USER-HADRESS Package
+
+        sscanf(line,"%d",&atom->nmoltypesH);
+    }
+    else if (strstr(line,"bond types")) {
       sscanf(line,"%d",&nbondtypes);
       if (addflag == NONE) atom->nbondtypes = nbondtypes + extra_bond_types;
     } else if (strstr(line,"angle types")) {
@@ -1701,6 +1709,8 @@ void ReadData::pairIJcoeffs()
 
 void ReadData::bondcoeffs()
 {
+  if (!nbondtypes) return;
+
   char *next;
   char *buf = new char[nbondtypes*MAXLINE];
 
@@ -1723,6 +1733,8 @@ void ReadData::bondcoeffs()
 
 void ReadData::anglecoeffs(int which)
 {
+  if (!nangletypes) return;
+
   char *next;
   char *buf = new char[nangletypes*MAXLINE];
 
@@ -1747,6 +1759,8 @@ void ReadData::anglecoeffs(int which)
 
 void ReadData::dihedralcoeffs(int which)
 {
+  if (!ndihedraltypes) return;
+
   char *next;
   char *buf = new char[ndihedraltypes*MAXLINE];
 
@@ -1774,6 +1788,8 @@ void ReadData::dihedralcoeffs(int which)
 
 void ReadData::impropercoeffs(int which)
 {
+  if (!nimpropertypes) return;
+
   char *next;
   char *buf = new char[nimpropertypes*MAXLINE];
 

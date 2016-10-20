@@ -38,7 +38,8 @@ enum{CONSTANT,EQUAL,ATOM};
 
 /* ---------------------------------------------------------------------- */
 
-FixHeat::FixHeat(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixHeat::FixHeat(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
+idregion(NULL), hstr(NULL), vheat(NULL), vscale(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix heat command");
 
@@ -63,8 +64,7 @@ FixHeat::FixHeat(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
   // optional args
 
   iregion = -1;
-  idregion = NULL;
-
+  
   int iarg = 5;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"region") == 0) {
@@ -82,8 +82,6 @@ FixHeat::FixHeat(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
   scale = 1.0;
 
   maxatom = 0;
-  vheat = NULL;
-  vscale = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -133,6 +131,8 @@ void FixHeat::init()
   if (group->count(igroup) == 0)
     error->all(FLERR,"Fix heat group has no atoms");
   masstotal = group->mass(igroup);
+  if (masstotal <= 0.0)
+    error->all(FLERR,"Fix heat group has invalid mass");
 }
 
 /* ---------------------------------------------------------------------- */

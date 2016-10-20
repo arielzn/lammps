@@ -17,8 +17,10 @@ pair_coeff	1 1 1.0 1.0 2.5
 neighbor	0.3 bin
 
 displace_atoms	all random 0.1 0.1 0.1 12314
-min_style	hftn
-fix		1 all box/relax iso 0.0
+min_style	sd
+fix		1 all box/relax aniso 0.0
 thermo 		100
+minimize	0.0 0.0 100 1000
+min_style	cg
 minimize	0.0 0.0 100 1000
 

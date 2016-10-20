@@ -280,15 +280,19 @@ void NeighborKokkos::choose_build(int index, NeighRequest *rq)
   if (rq->kokkos_host != 0) {
     PairPtrHost pb = NULL;
     if (rq->ghost) {
-      if (rq->full) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,1>;
-      else if (rq->half) error->one(FLERR,"Cannot (yet) request ghost atoms with Kokkos half neighbor list");
-      pair_build_host[index] = pb;
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPHostType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,1>;
+      }
+      else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,1,1>;
     } else {
-      if (rq->full) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,0>;
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPHostType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,0>;
+      }
       else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,1,0>;
-      pair_build_host[index] = pb;
     }
-    return;
+    pair_build_host[index] = pb;
   }
   if (rq->kokkos_device != 0) {
     PairPtrDevice pb = NULL;
@@ -585,6 +589,11 @@ void NeighborKokkos::build_topology_kokkos() {
     k_dihedrallist = neighbond_device.k_dihedrallist;
     k_improperlist = neighbond_device.k_improperlist;
 
+    k_bondlist.sync<LMPDeviceType>();
+    k_anglelist.sync<LMPDeviceType>();
+    k_dihedrallist.sync<LMPDeviceType>();
+    k_improperlist.sync<LMPDeviceType>();
+
     k_bondlist.modify<LMPDeviceType>();
     k_anglelist.modify<LMPDeviceType>();
     k_dihedrallist.modify<LMPDeviceType>();
@@ -596,6 +605,11 @@ void NeighborKokkos::build_topology_kokkos() {
     k_anglelist = neighbond_host.k_anglelist;
     k_dihedrallist = neighbond_host.k_dihedrallist;
     k_improperlist = neighbond_host.k_improperlist;
+
+    k_bondlist.sync<LMPHostType>();
+    k_anglelist.sync<LMPHostType>();
+    k_dihedrallist.sync<LMPHostType>();
+    k_improperlist.sync<LMPHostType>();
 
     k_bondlist.modify<LMPHostType>();
     k_anglelist.modify<LMPHostType>();

@@ -125,6 +125,8 @@ PairReaxC::PairReaxC(LAMMPS *lmp) : Pair(lmp)
 
 PairReaxC::~PairReaxC()
 {
+  if (copymode) return;
+
   if (fix_reax) modify->delete_fix("REAXC");
 
   if (setup_flag) {
@@ -247,7 +249,7 @@ void PairReaxC::settings(int narg, char **arg)
       system->safezone = force->numeric(FLERR,arg[iarg+1]);
       if (system->safezone < 0.0)
 	error->all(FLERR,"Illegal pair_style reax/c safezone command");
-      system->saferzone = system->safezone + 0.2;
+      system->saferzone = system->safezone*1.2;
       iarg += 2;
     } else if (strcmp(arg[iarg],"mincap") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal pair_style reax/c command");
@@ -346,7 +348,7 @@ void PairReaxC::init_style( )
 
   int iqeq;
   for (iqeq = 0; iqeq < modify->nfix; iqeq++)
-    if (strcmp(modify->fix[iqeq]->style,"qeq/reax") == 0) break;
+    if (strstr(modify->fix[iqeq]->style,"qeq/reax")) break;
   if (iqeq == modify->nfix && qeqflag == 1)
     error->all(FLERR,"Pair reax/c requires use of fix qeq/reax");
 
@@ -386,7 +388,6 @@ void PairReaxC::init_style( )
     delete [] fixarg;
     fix_reax = (FixReaxC *) modify->fix[modify->nfix-1];
   }
-
 }
 
 /* ---------------------------------------------------------------------- */

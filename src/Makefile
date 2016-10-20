@@ -1,6 +1,8 @@
 # LAMMPS multiple-machine -*- Makefile -*-
 
 SHELL = /bin/bash
+PYTHON = python
+
 #.IGNORE:
 
 # Definitions
@@ -42,19 +44,19 @@ endif
 # Package variables
 
 PACKAGE = asphere body class2 colloid compress coreshell dipole gpu \
-          granular kim kokkos kspace manybody mc meam misc molecule mpiio \
-          opt peri poems python qeq replica rigid shock snap srd \
-          voronoi
+	  granular kim \
+	  kokkos kspace manybody mc meam misc molecule mpiio opt peri poems \
+	  python qeq replica rigid shock snap srd voronoi
 
-PACKUSER = user-atc user-awpmd user-cg-cmm user-colvars user-cuda \
+PACKUSER = user-atc user-awpmd user-cg-cmm user-colvars \
 	   user-diffraction user-dpd user-drude user-eff user-fep user-h5md \
-	   user-intel user-lb user-manifold user-mgpt \
+	   user-hadress user-intel user-lb user-manifold user-mgpt \
 	   user-misc user-molfile user-omp user-phonon user-qmmm user-qtb \
 	   user-quip user-reaxc user-smd user-smtbq user-sph user-tally \
 	   user-vtk user-hmc
 
 PACKLIB = compress gpu kim kokkos meam mpiio poems python voronoi \
-	  user-atc user-awpmd user-colvars user-cuda user-h5md user-intel \
+	  user-atc user-awpmd user-colvars user-h5md user-intel \
 	  user-lb user-molfile user-qmmm user-quip user-smd user-vtk
 
 PACKALL = $(PACKAGE) $(PACKUSER)
@@ -90,7 +92,7 @@ help:
 	@echo 'make package-update (pu) replace src files with updated package files'
 	@echo 'make package-overwrite   replace package files with src files'
 	@echo 'make package-diff (pd)   diff src files against package files'
-	@echo 'make package-purge       purge obsolete copies of package sources'
+	@echo 'make purge               purge obsolete copies of source files'
 	@echo ''
 	@echo 'make machine             build LAMMPS for machine'
 	@echo 'make mode=lib machine    build LAMMPS as static lib for machine'
@@ -206,7 +208,7 @@ mpi-stubs:
 # install LAMMPS shared lib and Python wrapper for Python usage
 
 install-python:
-	@python ../python/install.py
+	@$(PYTHON) ../python/install.py
 
 # Create a tarball of src dir and packages
 
@@ -320,7 +322,7 @@ package-diff pd:
 	@echo ''
 	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p diff; done
 
-package-purge: Purge.list
+purge: Purge.list
 	@echo 'Purging obsolete and auto-generated source files'
 	@for f in `grep -v '#' Purge.list` ;		\
 	    do test -f $$f && rm $$f && echo $$f || : ;		\

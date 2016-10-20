@@ -155,6 +155,11 @@ void PairAIREBO::settings(int narg, char **arg)
     ljflag = force->inumeric(FLERR,arg[1]);
     torflag = force->inumeric(FLERR,arg[2]);
   }
+
+  // this one parameter for C-C interactions is different in AIREBO vs REBO
+  // see Favata, Micheletti, Ryu, Pugno, Comp Phys Comm (2016)
+  
+  PCCf_2_0 = -0.0276030;
 }
 
 /* ----------------------------------------------------------------------
@@ -592,6 +597,8 @@ void PairAIREBO::FLJ(int eflag, int vflag)
       // if outside of 2-path cutoff but inside 4-path cutoff,
       //   best = 0.0, test 3-,4-paths
       // if inside 2-path cutoff, best = wij, only test 3-,4-paths if best < 1
+      npath = testpath = done = 0;
+      best = 0.0;
 
       if (rijsq >= cutljsq[itype][jtype]) continue;
       rij = sqrt(rijsq);
@@ -608,7 +615,6 @@ void PairAIREBO::FLJ(int eflag, int vflag)
         else testpath = 0;
       }
 
-      done = 0;
       if (testpath) {
 
         // test all 3-body paths = I-K-J
@@ -629,7 +635,7 @@ void PairAIREBO::FLJ(int eflag, int vflag)
           if (rsq < rcmaxsq[itype][ktype]) {
             rik = sqrt(rsq);
             wik = Sp(rik,rcmin[itype][ktype],rcmax[itype][ktype],dwik);
-          } else wik = 0.0;
+          } else { dwik = wik = 0.0; rikS = rik = 1.0; }
 
           if (wik > best) {
             deljk[0] = x[j][0] - x[k][0];
@@ -679,7 +685,7 @@ void PairAIREBO::FLJ(int eflag, int vflag)
               if (rsq < rcmaxsq[ktype][mtype]) {
                 rkm = sqrt(rsq);
                 wkm = Sp(rkm,rcmin[ktype][mtype],rcmax[ktype][mtype],dwkm);
-              } else wkm = 0.0;
+              } else { dwkm = wkm = 0.0; rkmS = rkm = 1.0; }
 
               if (wik*wkm > best) {
                 deljm[0] = x[j][0] - x[m][0];
@@ -4089,7 +4095,12 @@ void PairAIREBO::spline_init()
   PCCf[0][3] = 0.0161253646;
   PCCf[1][1] = -0.010960;
   PCCf[1][2] = 0.00632624824;
-  PCCf[2][0] = -0.0276030;
+
+  // this one parameter for C-C interactions is different in REBO vs AIREBO
+  // see Favata, Micheletti, Ryu, Pugno, Comp Phys Comm (2016)
+
+  PCCf[2][0] = PCCf_2_0;
+
   PCCf[2][1] = 0.00317953083;
 
   PCHf[0][1] = 0.209336733;

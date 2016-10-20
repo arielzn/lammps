@@ -310,7 +310,7 @@ with tilt factors that exceed these limits, you can use the "box
 tilt"_box.html command, with a setting of {large}; a setting of
 {small} is the default.
 
-See "Section_howto 12"_Section_howto.html#howto_12 of the doc pages
+See "Section 6.12"_Section_howto.html#howto_12 of the doc pages
 for a geometric description of triclinic boxes, as defined by LAMMPS,
 and how to transform these parameters to and from other commonly used
 triclinic representations.
@@ -698,7 +698,8 @@ atoms in such a bond. :l
 If you plan to "dump"_dump.html image flags and perform post-analysis
 that will unwrap atom coordinates, it may be important that a
 continued run (restarted from a data file) begins with image flags
-that are consistent with the previous run. :l,ule
+that are consistent with the previous run. :l
+:ule
 
 NOTE: If your system is an infinite periodic crystal with bonds then
 it is impossible to have fully consistent image flags.  This is because
@@ -1044,7 +1045,7 @@ script.
 {Triangles} section:
 
 one line per triangle :ulb,l
-line syntax: atom-ID x1 y1 x2 y2 :l
+line syntax: atom-ID x1 y1 z1 x2 y2 z2 x3 y3 z3 :l
   atom-ID = ID of atom which is a line segment
   x1,y1,z1 = 1st corner point
   x2,y2,z2 = 2nd corner point

@@ -97,9 +97,6 @@ class Pair : protected Pointers {
   class NeighList *listmiddle;
   class NeighList *listouter;
 
-  unsigned int datamask;
-  unsigned int datamask_ext;
-
   int allocated;                 // 0/1 = whether arrays are allocated
                                  //       public so external driver can check
   int compute_flag;              // 0 if skip compute()
@@ -172,13 +169,15 @@ class Pair : protected Pointers {
 
   virtual int pack_forward_comm(int, int *, double *, int, int *) {return 0;}
   virtual void unpack_forward_comm(int, int, double *) {}
-  virtual int pack_forward_comm_kokkos(int, DAT::tdual_int_2d, int, DAT::tdual_xfloat_1d&, int, int *) {return 0;};
-  virtual void unpack_forward_comm_kokkos(int, int, DAT::tdual_xfloat_1d&) {}
+  virtual int pack_forward_comm_kokkos(int, DAT::tdual_int_2d, 
+                                       int, DAT::tdual_xfloat_1d &, 
+                                       int, int *) {return 0;};
+  virtual void unpack_forward_comm_kokkos(int, int, DAT::tdual_xfloat_1d &) {}
   virtual int pack_reverse_comm(int, int, double *) {return 0;}
   virtual void unpack_reverse_comm(int, int *, double *) {}
   virtual double memory_usage();
 
-  void set_copymode(int value) { copymode = value; }
+  void set_copymode(int value) {copymode = value;}
 
   // specific child-class methods for certain Pair styles
 
@@ -188,9 +187,6 @@ class Pair : protected Pointers {
   virtual void min_xf_pointers(int, double **, double **) {}
   virtual void min_xf_get(int) {}
   virtual void min_x_set(int) {}
-
-  virtual unsigned int data_mask() {return datamask;}
-  virtual unsigned int data_mask_ext() {return datamask_ext;}
 
   // management of callbacks to be run from ev_tally()
 

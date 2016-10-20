@@ -8,6 +8,7 @@
 #          Nfreq = dump and viz shapshot every this many steps
 #          Nsteps = run for this many steps
 
+from __future__ import print_function
 import sys
 sys.path.append("./pizza")
 
@@ -15,7 +16,7 @@ sys.path.append("./pizza")
 
 argv = sys.argv
 if len(argv) != 4:
-  print "Syntax: viz_pymol.py in.lammps Nfreq Nsteps"
+  print("Syntax: viz_pymol.py in.lammps Nfreq Nsteps")
   sys.exit()
 
 infile = sys.argv[1]
@@ -57,7 +58,7 @@ if me == 0:
 
   d = dump("tmp.dump",0)
   p = pdbfile(d)
-  d.next()
+  next(d)
   d.unscale()
   p.single(ntimestep)
   pm.load("tmp.pdb")
@@ -69,7 +70,7 @@ while ntimestep < nsteps:
   lmp.command("run %d pre no post no" % nfreq)
   ntimestep += nfreq
   if me == 0:
-    d.next()
+    next(d)
     d.unscale()
     p.single(ntimestep)
     pm.load("tmp.pdb")
@@ -78,5 +79,5 @@ while ntimestep < nsteps:
 lmp.command("run 0 pre no post yes")
 
 # uncomment if running in parallel via Pypar
-#print "Proc %d out of %d procs has" % (me,nprocs), lmp
+#print("Proc %d out of %d procs has" % (me,nprocs), lmp)
 #pypar.finalize()

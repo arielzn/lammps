@@ -33,7 +33,7 @@ using namespace FixConst;
 
 #define DELTA 4
 #define BIG 1.0e20
-#define NEXCEPT 5       // change when add to exceptions in add_fix()
+#define NEXCEPT 7       // change when add to exceptions in add_fix()
 
 /* ---------------------------------------------------------------------- */
 
@@ -44,6 +44,7 @@ Modify::Modify(LAMMPS *lmp) : Pointers(lmp)
   n_pre_exchange = n_pre_neighbor = 0;
   n_pre_force = n_pre_reverse = n_post_force = 0;
   n_final_integrate = n_end_of_step = n_thermo_energy = 0;
+  n_thermo_energy_atom = 0;
   n_initial_integrate_respa = n_post_integrate_respa = 0;
   n_pre_force_respa = n_post_force_respa = n_final_integrate_respa = 0;
   n_min_pre_exchange = n_min_pre_force = n_min_post_force = n_min_energy = 0;
@@ -54,7 +55,7 @@ Modify::Modify(LAMMPS *lmp) : Pointers(lmp)
   list_pre_exchange = list_pre_neighbor = NULL;
   list_pre_force = list_pre_reverse = list_post_force = NULL;
   list_final_integrate = list_end_of_step = NULL;
-  list_thermo_energy = NULL;
+  list_thermo_energy = list_thermo_energy_atom = NULL;
   list_initial_integrate_respa = list_post_integrate_respa = NULL;
   list_pre_force_respa = list_post_force_respa = NULL;
   list_final_integrate_respa = NULL;
@@ -67,17 +68,19 @@ Modify::Modify(LAMMPS *lmp) : Pointers(lmp)
   list_timeflag = NULL;
 
   nfix_restart_global = 0;
-  id_restart_global = style_restart_global = state_restart_global = NULL;
+  id_restart_global = style_restart_global = NULL;
+  state_restart_global = NULL;
+  used_restart_global = NULL;
   nfix_restart_peratom = 0;
   id_restart_peratom = style_restart_peratom = NULL;
-  index_restart_peratom = NULL;
+  index_restart_peratom = used_restart_peratom = NULL;
 
   ncompute = maxcompute = 0;
   compute = NULL;
 
   // fill map with fixes listed in style_fix.h
 
-  fix_map = new std::map<std::string,FixCreator>();
+  fix_map = new FixCreatorMap();
 
 #define FIX_CLASS
 #define FixStyle(key,Class) \
@@ -88,7 +91,7 @@ Modify::Modify(LAMMPS *lmp) : Pointers(lmp)
 
   // fill map with computes listed in style_compute.h
 
-  compute_map = new std::map<std::string,ComputeCreator>();
+  compute_map = new ComputeCreatorMap();
 
 #define COMPUTE_CLASS
 #define ComputeStyle(key,Class) \
@@ -124,6 +127,7 @@ Modify::~Modify()
   delete [] list_final_integrate;
   delete [] list_end_of_step;
   delete [] list_thermo_energy;
+  delete [] list_thermo_energy_atom;
   delete [] list_initial_integrate_respa;
   delete [] list_post_integrate_respa;
   delete [] list_pre_force_respa;
@@ -138,7 +142,7 @@ Modify::~Modify()
   delete [] end_of_step_every;
   delete [] list_timeflag;
 
-  restart_deallocate();
+  restart_deallocate(0);
 
   delete compute_map;
   delete fix_map;
@@ -154,7 +158,7 @@ void Modify::init()
 
   // delete storage of restart info since it is not valid after 1st run
 
-  restart_deallocate();
+  restart_deallocate(1);
 
   // create lists of fixes to call at each stage of run
 
@@ -168,6 +172,7 @@ void Modify::init()
   list_init(FINAL_INTEGRATE,n_final_integrate,list_final_integrate);
   list_init_end_of_step(END_OF_STEP,n_end_of_step,list_end_of_step);
   list_init_thermo_energy(THERMO_ENERGY,n_thermo_energy,list_thermo_energy);
+  list_init_thermo_energy_atom(n_thermo_energy_atom,list_thermo_energy_atom);
 
   list_init(INITIAL_INTEGRATE_RESPA,
             n_initial_integrate_respa,list_initial_integrate_respa);
@@ -441,6 +446,23 @@ double Modify::thermo_energy()
 }
 
 /* ----------------------------------------------------------------------
+   per-atom thermo energy call, only for relevant fixes
+   called by compute pe/atom
+------------------------------------------------------------------------- */
+
+void Modify::thermo_energy_atom(int nlocal, double *energy)
+{
+  int i,j;
+  double *eatom;
+
+  for (i = 0; i < n_thermo_energy_atom; i++) {
+    eatom = fix[list_thermo_energy_atom[i]]->eatom;
+    if (!eatom) continue;
+    for (j = 0; j < nlocal; j++) energy[j] += eatom[j];
+  }
+}
+
+/* ----------------------------------------------------------------------
    post_run call
 ------------------------------------------------------------------------- */
 
@@ -697,7 +719,7 @@ void Modify::add_fix(int narg, char **arg, int trysuffix)
   // MUST change NEXCEPT above when add new fix to this list
 
   const char *exceptions[NEXCEPT] =
-    {"GPU","OMP","INTEL","property/atom","cmap"};
+    {"GPU","OMP","INTEL","property/atom","cmap","cmap3","rx"};
 
   if (domain->box_exist == 0) {
     int m;
@@ -799,11 +821,16 @@ void Modify::add_fix(int narg, char **arg, int trysuffix)
     if (strcmp(id_restart_global[i],fix[ifix]->id) == 0 &&
         strcmp(style_restart_global[i],fix[ifix]->style) == 0) {
       fix[ifix]->restart(state_restart_global[i]);
+      used_restart_global[i] = 1;
       if (comm->me == 0) {
-        const char *str = (const char *) ("Resetting global state of Fix %s "
-                                          "Style %s from restart file info\n");
-        if (screen) fprintf(screen,str,fix[ifix]->id,fix[ifix]->style);
-        if (logfile) fprintf(logfile,str,fix[ifix]->id,fix[ifix]->style);
+	if (screen) 
+          fprintf(screen,"Resetting global fix info from restart file:\n");
+	if (logfile) 
+          fprintf(logfile,"Resetting global fix info from restart file:\n");
+        if (screen) fprintf(screen,"  fix style: %s, fix ID: %s\n",
+                            fix[ifix]->style,fix[ifix]->id);
+        if (logfile) fprintf(logfile,"  fix style: %s, fix ID: %s\n",
+                             fix[ifix]->style,fix[ifix]->id);
       }
     }
 
@@ -813,14 +840,19 @@ void Modify::add_fix(int narg, char **arg, int trysuffix)
   for (int i = 0; i < nfix_restart_peratom; i++)
     if (strcmp(id_restart_peratom[i],fix[ifix]->id) == 0 &&
         strcmp(style_restart_peratom[i],fix[ifix]->style) == 0) {
+      used_restart_peratom[i] = 1;
       for (int j = 0; j < atom->nlocal; j++)
         fix[ifix]->unpack_restart(j,index_restart_peratom[i]);
       fix[ifix]->restart_reset = 1;
       if (comm->me == 0) {
-        char *str = (char *) ("Resetting per-atom state of Fix %s Style %s "
-                     "from restart file info\n");
-        if (screen) fprintf(screen,str,fix[ifix]->id,fix[ifix]->style);
-        if (logfile) fprintf(logfile,str,fix[ifix]->id,fix[ifix]->style);
+	if (screen) 
+          fprintf(screen,"Resetting peratom fix info from restart file:\n");
+	if (logfile) 
+          fprintf(logfile,"Resetting peratom fix info from restart file:\n");
+        if (screen) fprintf(screen,"  fix style: %s, fix ID: %s\n",
+                            fix[ifix]->style,fix[ifix]->id);
+        if (logfile) fprintf(logfile,"  fix style: %s, fix ID: %s\n",
+                             fix[ifix]->style,fix[ifix]->id);
       }
     }
 
@@ -889,6 +921,7 @@ void Modify::delete_fix(const char *id)
 
 int Modify::find_fix(const char *id)
 {
+  if(id==NULL) return -1;
   int ifix;
   for (ifix = 0; ifix < nfix; ifix++)
     if (strcmp(id,fix[ifix]->id) == 0) break;
@@ -1018,6 +1051,7 @@ void Modify::delete_compute(const char *id)
 
 int Modify::find_compute(const char *id)
 {
+  if(id==NULL) return -1;
   int icompute;
   for (icompute = 0; icompute < ncompute; icompute++)
     if (strcmp(id,compute[icompute]->id) == 0) break;
@@ -1136,6 +1170,7 @@ int Modify::read_restart(FILE *fp)
     id_restart_global = new char*[nfix_restart_global];
     style_restart_global = new char*[nfix_restart_global];
     state_restart_global = new char*[nfix_restart_global];
+    used_restart_global = new int[nfix_restart_global];
   }
 
   // read each entry and Bcast to all procs
@@ -1160,6 +1195,8 @@ int Modify::read_restart(FILE *fp)
     state_restart_global[i] = new char[n];
     if (me == 0) fread(state_restart_global[i],sizeof(char),n,fp);
     MPI_Bcast(state_restart_global[i],n,MPI_CHAR,0,world);
+
+    used_restart_global[i] = 0;
   }
 
   // nfix_restart_peratom = # of restart entries with peratom info
@@ -1175,6 +1212,7 @@ int Modify::read_restart(FILE *fp)
     id_restart_peratom = new char*[nfix_restart_peratom];
     style_restart_peratom = new char*[nfix_restart_peratom];
     index_restart_peratom = new int[nfix_restart_peratom];
+    used_restart_peratom = new int[nfix_restart_peratom];
   }
 
   // read each entry and Bcast to all procs
@@ -1199,6 +1237,7 @@ int Modify::read_restart(FILE *fp)
     maxsize += n;
 
     index_restart_peratom[i] = i;
+    used_restart_peratom[i] = 0;
   }
 
   return maxsize;
@@ -1206,11 +1245,36 @@ int Modify::read_restart(FILE *fp)
 
 /* ----------------------------------------------------------------------
    delete all lists of restart file Fix info
+   if flag set, print list of restart file info not assigned to new fixes
 ------------------------------------------------------------------------- */
 
-void Modify::restart_deallocate()
+void Modify::restart_deallocate(int flag)
 {
   if (nfix_restart_global) {
+    if (flag && comm->me == 0) {
+      int i;
+      for (i = 0; i < nfix_restart_global; i++)
+	if (used_restart_global[i] == 0) break;
+      if (i == nfix_restart_global) {
+	if (screen) 
+          fprintf(screen,"All restart file global fix info "
+                  "was re-assigned\n");
+	if (logfile) 
+          fprintf(logfile,"All restart file global fix info "
+                  "was re-assigned\n");
+      } else {
+	if (screen) fprintf(screen,"Unused restart file global fix info:\n");
+	if (logfile) fprintf(logfile,"Unused restart file global fix info:\n");
+	for (i = 0; i < nfix_restart_global; i++) {
+	  if (used_restart_global[i]) continue;
+	  if (screen) fprintf(screen,"  fix style: %s, fix ID: %s\n",
+			      style_restart_global[i],id_restart_global[i]);
+	  if (logfile) fprintf(logfile,"  fix style: %s, fix ID: %s\n",
+			       style_restart_global[i],id_restart_global[i]);
+	}
+      }
+    }
+
     for (int i = 0; i < nfix_restart_global; i++) {
       delete [] id_restart_global[i];
       delete [] style_restart_global[i];
@@ -1219,9 +1283,34 @@ void Modify::restart_deallocate()
     delete [] id_restart_global;
     delete [] style_restart_global;
     delete [] state_restart_global;
+    delete [] used_restart_global;
   }
 
   if (nfix_restart_peratom) {
+    if (flag && comm->me == 0) {
+      int i;
+      for (i = 0; i < nfix_restart_peratom; i++)
+	if (used_restart_peratom[i] == 0) break;
+      if (i == nfix_restart_peratom) {
+	if (screen) 
+          fprintf(screen,"All restart file peratom fix info "
+                  "was re-assigned\n");
+	if (logfile) 
+          fprintf(logfile,"All restart file peratom fix info "
+                  "was re-assigned\n");
+      } else {
+	if (screen) fprintf(screen,"Unused restart file peratom fix info:\n");
+	if (logfile) fprintf(logfile,"Unused restart file peratom fix info:\n");
+	for (i = 0; i < nfix_restart_peratom; i++) {
+	  if (used_restart_peratom[i]) continue;
+	  if (screen) fprintf(screen,"  fix style: %s, fix ID: %s\n",
+			      style_restart_peratom[i],id_restart_peratom[i]);
+	  if (logfile) fprintf(logfile,"  fix style: %s, fix ID: %s\n",
+			       style_restart_peratom[i],id_restart_peratom[i]);
+	}
+      }
+    }
+
     for (int i = 0; i < nfix_restart_peratom; i++) {
       delete [] id_restart_peratom[i];
       delete [] style_restart_peratom[i];
@@ -1229,6 +1318,7 @@ void Modify::restart_deallocate()
     delete [] id_restart_peratom;
     delete [] style_restart_peratom;
     delete [] index_restart_peratom;
+    delete [] used_restart_peratom;
   }
 
   nfix_restart_global = nfix_restart_peratom = 0;
@@ -1275,7 +1365,7 @@ void Modify::list_init_end_of_step(int mask, int &n, int *&list)
 
 /* ----------------------------------------------------------------------
    create list of fix indices for thermo energy fixes
-   only added to list if fix has THERMO_ENERGY mask
+   only added to list if fix has THERMO_ENERGY mask set,
    and its thermo_energy flag was set via fix_modify
 ------------------------------------------------------------------------- */
 
@@ -1291,6 +1381,26 @@ void Modify::list_init_thermo_energy(int mask, int &n, int *&list)
   n = 0;
   for (int i = 0; i < nfix; i++)
     if (fmask[i] & mask && fix[i]->thermo_energy) list[n++] = i;
+}
+
+/* ----------------------------------------------------------------------
+   create list of fix indices for peratom thermo energy fixes
+   only added to list if fix has its peatom_flag set,
+   and its thermo_energy flag was set via fix_modify
+------------------------------------------------------------------------- */
+
+void Modify::list_init_thermo_energy_atom(int &n, int *&list)
+{
+  delete [] list;
+
+  n = 0;
+  for (int i = 0; i < nfix; i++)
+    if (fix[i]->peatom_flag && fix[i]->thermo_energy) n++;
+  list = new int[n];
+
+  n = 0;
+  for (int i = 0; i < nfix; i++)
+    if (fix[i]->peatom_flag && fix[i]->thermo_energy) list[n++] = i;
 }
 
 /* ----------------------------------------------------------------------

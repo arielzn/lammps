@@ -67,6 +67,7 @@ Respa::Respa(LAMMPS *lmp, int narg, char **arg) : Integrate(lmp, narg, arg)
   level_inner = level_middle = level_outer = -1;
 
   // defaults for hybrid pair styles
+
   nhybrid_styles = 0;
   tally_global = 1;
   pair_compute = 1;
@@ -150,9 +151,12 @@ Respa::Respa(LAMMPS *lmp, int narg, char **arg) : Integrate(lmp, narg, arg)
     error->all(FLERR,"Cannot set respa middle without inner/outer");
 
   // cannot combine hybrid with any of pair/inner/middle/outer
+
   if ((nhybrid_styles > 0) && (level_pair >= 0 || level_inner >= 0
                                || level_middle >= 0 || level_outer >= 0))
-    error->all(FLERR,"Cannot set respa hybrid and any of pair/inner/middle/outer");
+    error->all(FLERR,"Cannot set respa hybrid and "
+               "any of pair/inner/middle/outer");
+
   // set defaults if user did not specify level
   // bond to innermost level
   // angle same as bond, dihedral same as angle, improper same as dihedral
@@ -269,7 +273,9 @@ Respa::Respa(LAMMPS *lmp, int narg, char **arg) : Integrate(lmp, narg, arg)
     cutoff[3] = cutoff[1];
   }
 
-  // ensure that pair->compute() is run properly when the "hybrid" keyword is not used.
+  // ensure that pair->compute() is run properly
+  // when the hybrid keyword is not used
+
   if (nhybrid_styles < 1) {
     pair_compute = 1;
     tally_global = 1;
@@ -394,7 +400,17 @@ void Respa::setup()
     fprintf(screen,"Setting up r-RESPA run ...\n");
     fprintf(screen,"  Unit style    : %s\n", update->unit_style);
     fprintf(screen,"  Current step  : " BIGINT_FORMAT "\n", update->ntimestep);
-    fprintf(screen,"  OuterTime step: %g\n", update->dt);
+    fprintf(screen,"  Time steps    :");
+    for (int ilevel=0; ilevel < nlevels; ++ilevel)
+      fprintf(screen," %d:%g",ilevel+1, step[ilevel]);
+    fprintf(screen,"\n  r-RESPA fixes :");
+    for (int l=0; l < modify->n_post_force_respa; ++l) {
+      Fix *f = modify->fix[modify->list_post_force_respa[l]];
+      if (f->respa_level >= 0)
+        fprintf(screen," %d:%s[%s]",
+                MIN(f->respa_level+1,nlevels),f->style,f->id);
+    }
+    fprintf(screen,"\n");
     timer->print_timeout(screen);
   }
 

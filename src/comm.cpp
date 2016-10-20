@@ -87,7 +87,8 @@ Comm::Comm(LAMMPS *lmp) : Pointers(lmp)
   } else if (getenv("OMP_NUM_THREADS") == NULL) {
     nthreads = 1;
     if (me == 0)
-      error->warning(FLERR,"OMP_NUM_THREADS environment is not set.");
+      error->message(FLERR,"OMP_NUM_THREADS environment is not set. "
+                           "Defaulting to 1 thread.");
   } else {
     nthreads = omp_get_max_threads();
   }
@@ -687,6 +688,10 @@ void Comm::ring(int n, int nper, void *inbuf, int messtag,
   int nbytes = n*nper;
   int maxbytes;
   MPI_Allreduce(&nbytes,&maxbytes,1,MPI_INT,MPI_MAX,world);
+
+  // no need to communicate without data
+
+  if (maxbytes == 0) return;
 
   char *buf,*bufcopy;
   memory->create(buf,maxbytes,"comm:buf");

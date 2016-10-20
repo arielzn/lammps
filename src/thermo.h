@@ -25,7 +25,6 @@ class Thermo : protected Pointers {
   char *style;
   int normflag;          // 0 if do not normalize by atoms, 1 if normalize
   int modified;          // 1 if thermo_modify has been used, else 0
-  int cudable;           // 1 if all computes used are cudable
   int lostflag;          // IGNORE,WARN,ERROR
   int lostbond;          // ditto for atoms in bonds
 
@@ -46,10 +45,13 @@ class Thermo : protected Pointers {
   int nfield,nfield_initial;
   int me;
 
-  char **format,**format_user;
+  char **format;
+  char *format_line_user;
+  char *format_float_user,*format_int_user,*format_bigint_user;
+  char **format_column_user;
+
   char *format_float_one_def,*format_float_multi_def;
   char *format_int_one_def,*format_int_multi_def;
-  char *format_float_user,*format_int_user,*format_bigint_user;
   char format_multi[128];
   char format_bigint_one_def[8],format_bigint_multi_def[8];
 
@@ -80,9 +82,9 @@ class Thermo : protected Pointers {
                          // index = where they are in computes list
                          // id = ID of Compute objects
                          // Compute * = ptrs to the Compute objects
-  int index_temp,index_press_scalar,index_press_vector,index_pe;
-  char *id_temp,*id_press,*id_pe;
-  class Compute *temperature,*pressure,*pe;
+  int index_temp,index_press_scalar,index_press_vector,index_pe,index_ke;
+  char *id_temp,*id_press,*id_pe,*id_ke;
+  class Compute *temperature,*pressure,*pe,*ke;
 
   int ncompute;                // # of Compute objects called by thermo
   char **id_compute;           // their IDs
@@ -128,6 +130,7 @@ class Thermo : protected Pointers {
   void compute_spcpu();
   void compute_cpuremain();
   void compute_part();
+  void compute_timeremain();
 
   void compute_atoms();
   void compute_temp();

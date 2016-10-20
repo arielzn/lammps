@@ -75,7 +75,7 @@ The "create_box"_create_box.html, "read data"_read_data.html, and
 simulation box is orthogonal or triclinic and their doc pages explain
 the meaning of the xy,xz,yz tilt factors.
 
-See "Section_howto 12"_Section_howto.html#howto_12 of the doc pages
+See "Section 6.12"_Section_howto.html#howto_12 of the doc pages
 for a geometric description of triclinic boxes, as defined by LAMMPS,
 and how to transform these parameters to and from other commonly used
 triclinic representations.
@@ -173,7 +173,7 @@ change_box all x scale 1.1 y volume z volume :pre
 
 The {volume} style changes the associated dimension so that the
 overall box volume is unchanged relative to its value before the
-preceding keyword was invoked. 
+preceding keyword was invoked.
 
 If the following command is used, then the z box length will shrink by
 the same 1.1 factor the x box length was increased by:
@@ -315,12 +315,12 @@ been previously used to define the lattice spacing.
 
 If you use the {ortho} or {triclinic} keywords, then at the point in
 the input script when this command is issued, no "dumps"_dump.html can
-be active, nor can a "fix ave/spatial"_fix_ave_spatial.html or "fix
-deform"_fix_deform.html be active.  This is because these commands
-test whether the simulation box is orthogonal when they are first
-issued.  Note that these commands can be used in your script before a
-change_box command is issued, so long as an "undump"_undump.html or
-"unfix"_unfix.html command is also used to turn them off.
+be active, nor can a "fix deform"_fix_deform.html be active.  This is
+because these commands test whether the simulation box is orthogonal
+when they are first issued.  Note that these commands can be used in
+your script before a change_box command is issued, so long as an
+"undump"_undump.html or "unfix"_unfix.html command is also used to
+turn them off.
 
 [Related commands:]
 

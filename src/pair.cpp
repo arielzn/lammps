@@ -34,7 +34,6 @@
 #include "update.h"
 #include "modify.h"
 #include "compute.h"
-#include "accelerator_cuda.h"
 #include "suffix.h"
 #include "atom_masks.h"
 #include "memory.h"
@@ -99,10 +98,7 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   num_tally_compute = 0;
   list_tally_compute = NULL;
 
-  // CUDA and KOKKOS per-fix data masks
-
-  datamask = ALL_MASK;
-  datamask_ext = ALL_MASK;
+  // KOKKOS per-fix data masks
 
   execution_space = Host;
   datamask_read = ALL_MASK;
@@ -116,7 +112,7 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
 Pair::~Pair()
 {
   num_tally_compute = 0;
-  memory->sfree((void *)list_tally_compute);
+  memory->sfree((void *) list_tally_compute);
   list_tally_compute = NULL;
 
   if (copymode) return;
@@ -199,9 +195,11 @@ void Pair::init()
   if (tail_flag && domain->nonperiodic && comm->me == 0)
     error->warning(FLERR,"Using pair tail corrections with nonperiodic system");
   if (!compute_flag && tail_flag)
-    error->warning(FLERR,"Using pair tail corrections with pair_modify compute no");
+    error->warning(FLERR,"Using pair tail corrections with "
+                   "pair_modify compute no");
   if (!compute_flag && offset_flag)
-    error->warning(FLERR,"Using pair potential shift with pair_modify compute no");
+    error->warning(FLERR,"Using pair potential shift with "
+                   "pair_modify compute no");
 
   // for manybody potentials
   // check if bonded exclusions could invalidate the neighbor list
@@ -810,8 +808,6 @@ void Pair::ev_setup(int eflag, int vflag)
     if (vflag_atom == 0) vflag_either = 0;
     if (vflag_either == 0 && eflag_either == 0) evflag = 0;
   } else vflag_fdotr = 0;
-
-  if (lmp->cuda) lmp->cuda->evsetup_eatom_vatom(eflag_atom,vflag_atom);
 }
 
 /* ----------------------------------------------------------------------
