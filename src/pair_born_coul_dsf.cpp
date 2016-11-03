@@ -135,14 +135,6 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
 
-        if (rsq < cut_ljsq[itype][jtype]) {
-          r6inv = r2inv*r2inv*r2inv;
-          r = sqrt(rsq);
-          rexp = exp((sigma[itype][jtype]-r)*rhoinv[itype][jtype]);
-          forceborn = born1[itype][jtype]*r*rexp - born2[itype][jtype]*r6inv
-            + born3[itype][jtype]*r2inv*r6inv;
-        } else forceborn = 0.0;
-
         if (rsq < cut_coulsq) {
           r = sqrt(rsq);
           prefactor = qqrd2e*qtmp*q[j]/r;
@@ -153,6 +145,14 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
                                    r*f_shift) * r;
           if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
         } else forcecoul = 0.0;
+
+        if (rsq < cut_ljsq[itype][jtype]) {
+          r6inv = r2inv*r2inv*r2inv;
+          r = sqrt(rsq);
+          rexp = exp((sigma[itype][jtype]-r)*rhoinv[itype][jtype]);
+          forceborn = born1[itype][jtype]*r*rexp - born2[itype][jtype]*r6inv
+            + born3[itype][jtype]*r2inv*r6inv;
+        } else forceborn = 0.0;
 
         fpair = (forcecoul + factor_lj*forceborn) * r2inv;
 
@@ -166,16 +166,15 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
         }
 
         if (eflag) {
+          if (rsq < cut_coulsq) {
+            ecoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
+            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
+          } else ecoul = 0.0;
           if (rsq < cut_ljsq[itype][jtype]) {
             evdwl = a[itype][jtype]*rexp - c[itype][jtype]*r6inv +
               d[itype][jtype]*r6inv*r2inv - offset[itype][jtype];
             evdwl *= factor_lj;
           } else evdwl = 0.0;
-
-          if (rsq < cut_coulsq) {
-            ecoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
-            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
-          } else ecoul = 0.0;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
