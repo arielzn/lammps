@@ -29,17 +29,10 @@
 #include "math_const.h"
 #include "memory.h"
 #include "error.h"
+#include "math_special.h"
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
-
-#define EWALD_F   1.12837917
-#define EWALD_P   0.3275911
-#define A1        0.254829592
-#define A2       -0.284496736
-#define A3        1.421413741
-#define A4       -1.453152027
-#define A5        1.061405429
 
 /* ---------------------------------------------------------------------- */
 
@@ -79,7 +72,7 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
   double r,rsq,r2inv,r6inv,forcecoul,forceborn,factor_coul,factor_lj;
-  double prefactor,erfcc,erfcd,t;
+  double prefactor,erfcc,erfcd,arg;
   double rexp;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -138,9 +131,9 @@ void PairBornCoulDSF::compute(int eflag, int vflag)
         if (rsq < cut_coulsq) {
           r = sqrt(rsq);
           prefactor = qqrd2e*qtmp*q[j]/r;
-          erfcd = exp(-alpha*alpha*rsq);
-          t = 1.0 / (1.0 + EWALD_P*alpha*r);
-          erfcc = t * (A1+t*(A2+t*(A3+t*(A4+t*A5)))) * erfcd;
+	  arg = alpha * r ;
+          erfcd = MathSpecial::expmsq(arg);
+          erfcc = MathSpecial::my_erfcx(arg) * erfcd;
           forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
                                    r*f_shift) * r;
           if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
@@ -456,18 +449,19 @@ double PairBornCoulDSF::single(int i, int j, int itype, int jtype,
                                 double factor_coul, double factor_lj,
                                 double &fforce)
 {
-  double r2inv,r6inv,r,prefactor,t,rexp;
+  double r2inv,r6inv,r,prefactor,rexp;
   double forcecoul,forceborn,phicoul,phiborn;
-  double erfcc,erfcd;
+  double erfcc,erfcd,arg;
 
   r2inv = 1.0/rsq;
 
   if (rsq < cut_coulsq) {
     r = sqrt(rsq);
     prefactor = factor_coul * force->qqrd2e * atom->q[i]*atom->q[j]/r;
-    erfcd = exp(-alpha*alpha*rsq);
-    t = 1.0 / (1.0 + EWALD_P*alpha*r);
-    erfcc = t * (A1+t*(A2+t*(A3+t*(A4+t*A5)))) * erfcd;
+
+    arg = alpha * r ;
+    erfcd = MathSpecial::expmsq(arg);
+    erfcc = MathSpecial::my_erfcx(arg) * erfcd;
 
     forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS*erfcd +
       r*f_shift) * r;

@@ -29,22 +29,12 @@
 #include "math_const.h"
 #include "memory.h"
 #include "error.h"
+#include "math_special.h"
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define EWALD_F   1.12837917
-#define EWALD_P   9.95473818e-1
-#define B0       -0.1335096380159268
-#define B1       -2.57839507e-1
-#define B2       -1.37203639e-1
-#define B3       -8.88822059e-3
-#define B4       -5.80844129e-3
-#define B5        1.14652755e-1
-
 #define EPSILON 1.0e-20
-#define EPS_EWALD 1.0e-6
-#define EPS_EWALD_SQR 1.0e-12
 
 
 /* ---------------------------------------------------------------------- */
@@ -62,7 +52,7 @@ void PairBornCoulDSFCS::compute(int eflag, int vflag)
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
   double r,rsq,r2inv,r6inv,forcecoul,forceborn,factor_coul,factor_lj;
-  double prefactor,erfcc,erfcd,t,u;
+  double prefactor,erfcc,erfcd,arg;
   double rexp;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -121,31 +111,13 @@ void PairBornCoulDSFCS::compute(int eflag, int vflag)
 
         if (rsq < cut_coulsq) {
           r = sqrt(rsq);
-          prefactor = qqrd2e*qtmp*q[j];
-          if (factor_coul < 1.0) {
-             // When bonded parts are being calculated a minimal distance (EPS_EWALD)
-             // has to be added to the prefactor and erfc in order to make the
-             // used approximation functions for the correction valid
-             erfcd = exp(-alpha*alpha*(rsq+EPS_EWALD_SQR));
-             t = 1.0 / (1.0 + EWALD_P*alpha*(r+EPS_EWALD));
-             u = 1.0 - t;
-             erfcc = t * (1.+u*(B0+u*(B1+u*(B2+u*(B3+u*(B4+u*B5)))))) * erfcd;
-             prefactor /= (r+EPS_EWALD);
-             forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
-                                      r*f_shift) * r;
-	     forcecoul -= (1.0-factor_coul)*prefactor;
-             // Additionally r2inv needs to be accordingly modified since the later
-             // scaling of the overall force shall be consistent
-             r2inv = 1.0/(rsq + EPS_EWALD_SQR);
-          } else {
-             erfcd = exp(-alpha*alpha*rsq);
-             t = 1.0 / (1.0 + EWALD_P*alpha*r);
-             u = 1.0 - t;
-             erfcc = t * (1.+u*(B0+u*(B1+u*(B2+u*(B3+u*(B4+u*B5)))))) * erfcd;
-             prefactor /= r;
-             forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
-                                      r*f_shift) * r;
-          }
+          prefactor = qqrd2e*qtmp*q[j] / r;
+	  arg = alpha * r ;
+          erfcd = MathSpecial::expmsq(arg);
+          erfcc = MathSpecial::my_erfcx(arg) * erfcd;
+          forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
+                                   r*f_shift) * r;
+          if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
         } else forcecoul = 0.0;
 
         if (rsq < cut_ljsq[itype][jtype]) {
